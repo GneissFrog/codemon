@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+  <!-- Pixel art style game controller icon -->
+  <rect x="2" y="6" width="20" height="12" rx="2" fill="#1a1c2c" stroke="#29adff"/>
+  <!-- D-pad -->
+  <rect x="5" y="9" width="2" height="6" fill="#29adff"/>
+  <rect x="4" y="10" width="4" height="4" fill="#29adff"/>
+  <!-- Buttons -->
+  <circle cx="17" cy="10" r="1.5" fill="#ffec27"/>
+  <circle cx="19" cy="12" r="1.5" fill="#00e436"/>
+  <circle cx="15" cy="12" r="1.5" fill="#ff004d"/>
+  <circle cx="17" cy="14" r="1.5" fill="#29adff"/>
+  <!-- Screen glow -->
+  <rect x="8" y="11" width="8" height="2" fill="#29adff" opacity="0.5"/>
+</svg>

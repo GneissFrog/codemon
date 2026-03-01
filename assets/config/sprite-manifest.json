@@ -1,0 +1,2044 @@
+{
+  "version": 1,
+  "description": "Sprout Lands asset pack - sprite coordinates and animations",
+  "tileSize": 16,
+  "spritesheets": {
+    "claude-actions": {
+      "image": "assets/sprites/characters/Basic Charakter Actions.png",
+      "dimensions": {
+        "width": 96,
+        "height": 576
+      },
+      "frameSize": {
+        "width": 16,
+        "height": 16
+      },
+      "grid": {
+        "cols": 6,
+        "rows": 36
+      },
+      "isCharacter": true,
+      "characterConfig": {
+        "directions": ["down", "up", "left", "right"],
+        "actions": ["hoe", "water", "plant", "harvest", "walk", "idle"],
+        "framesPerAction": 6
+      },
+      "sprites": {
+        "comment": "Layout: 6 action columns, each with 6 direction variants × 6 frames. Directions: down, up, left, right, etc.",
+        "hoe-col": {
+          "x": 0,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        },
+        "water-col": {
+          "x": 16,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        },
+        "plant-col": {
+          "x": 32,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        },
+        "harvest-col": {
+          "x": 48,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        },
+        "walk-col": {
+          "x": 64,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        },
+        "idle-col": {
+          "x": 80,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        },
+        "char-hoe-down-0": {
+          "x": 0,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        },
+        "char-hoe-down-1": {
+          "x": 0,
+          "y": 16,
+          "w": 16,
+          "h": 16
+        },
+        "char-hoe-down-2": {
+          "x": 0,
+          "y": 32,
+          "w": 16,
+          "h": 16
+        },
+        "char-hoe-down-3": {
+          "x": 0,
+          "y": 48,
+          "w": 16,
+          "h": 16
+        },
+        "char-hoe-down-4": {
+          "x": 0,
+          "y": 64,
+          "w": 16,
+          "h": 16
+        },
+        "char-hoe-down-5": {
+          "x": 0,
+          "y": 80,
+          "w": 16,
+          "h": 16
+        },
+        "char-hoe-up-0": {
+          "x": 0,
+          "y": 96,
+          "w": 16,
+          "h": 16
+        },
+        "char-hoe-up-1": {
+          "x": 0,
+          "y": 112,
+          "w": 16,
+          "h": 16
+        },
+        "char-hoe-up-2": {
+          "x": 0,
+          "y": 128,
+          "w": 16,
+          "h": 16
+        },
+        "char-hoe-up-3": {
+          "x": 0,
+          "y": 144,
+          "w": 16,
+          "h": 16
+        },
+        "char-hoe-up-4": {
+          "x": 0,
+          "y": 160,
+          "w": 16,
+          "h": 16
+        },
+        "char-hoe-up-5": {
+          "x": 0,
+          "y": 176,
+          "w": 16,
+          "h": 16
+        },
+        "char-hoe-left-0": {
+          "x": 0,
+          "y": 192,
+          "w": 16,
+          "h": 16
+        },
+        "char-hoe-left-1": {
+          "x": 0,
+          "y": 208,
+          "w": 16,
+          "h": 16
+        },
+        "char-hoe-left-2": {
+          "x": 0,
+          "y": 224,
+          "w": 16,
+          "h": 16
+        },
+        "char-hoe-left-3": {
+          "x": 0,
+          "y": 240,
+          "w": 16,
+          "h": 16
+        },
+        "char-hoe-left-4": {
+          "x": 0,
+          "y": 256,
+          "w": 16,
+          "h": 16
+        },
+        "char-hoe-left-5": {
+          "x": 0,
+          "y": 272,
+          "w": 16,
+          "h": 16
+        },
+        "char-hoe-right-0": {
+          "x": 0,
+          "y": 288,
+          "w": 16,
+          "h": 16
+        },
+        "char-hoe-right-1": {
+          "x": 0,
+          "y": 304,
+          "w": 16,
+          "h": 16
+        },
+        "char-hoe-right-2": {
+          "x": 0,
+          "y": 320,
+          "w": 16,
+          "h": 16
+        },
+        "char-hoe-right-3": {
+          "x": 0,
+          "y": 336,
+          "w": 16,
+          "h": 16
+        },
+        "char-hoe-right-4": {
+          "x": 0,
+          "y": 352,
+          "w": 16,
+          "h": 16
+        },
+        "char-hoe-right-5": {
+          "x": 0,
+          "y": 368,
+          "w": 16,
+          "h": 16
+        },
+        "char-water-down-0": {
+          "x": 16,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        },
+        "char-water-down-1": {
+          "x": 16,
+          "y": 16,
+          "w": 16,
+          "h": 16
+        },
+        "char-water-down-2": {
+          "x": 16,
+          "y": 32,
+          "w": 16,
+          "h": 16
+        },
+        "char-water-down-3": {
+          "x": 16,
+          "y": 48,
+          "w": 16,
+          "h": 16
+        },
+        "char-water-down-4": {
+          "x": 16,
+          "y": 64,
+          "w": 16,
+          "h": 16
+        },
+        "char-water-down-5": {
+          "x": 16,
+          "y": 80,
+          "w": 16,
+          "h": 16
+        },
+        "char-water-up-0": {
+          "x": 16,
+          "y": 96,
+          "w": 16,
+          "h": 16
+        },
+        "char-water-up-1": {
+          "x": 16,
+          "y": 112,
+          "w": 16,
+          "h": 16
+        },
+        "char-water-up-2": {
+          "x": 16,
+          "y": 128,
+          "w": 16,
+          "h": 16
+        },
+        "char-water-up-3": {
+          "x": 16,
+          "y": 144,
+          "w": 16,
+          "h": 16
+        },
+        "char-water-up-4": {
+          "x": 16,
+          "y": 160,
+          "w": 16,
+          "h": 16
+        },
+        "char-water-up-5": {
+          "x": 16,
+          "y": 176,
+          "w": 16,
+          "h": 16
+        },
+        "char-water-left-0": {
+          "x": 16,
+          "y": 192,
+          "w": 16,
+          "h": 16
+        },
+        "char-water-left-1": {
+          "x": 16,
+          "y": 208,
+          "w": 16,
+          "h": 16
+        },
+        "char-water-left-2": {
+          "x": 16,
+          "y": 224,
+          "w": 16,
+          "h": 16
+        },
+        "char-water-left-3": {
+          "x": 16,
+          "y": 240,
+          "w": 16,
+          "h": 16
+        },
+        "char-water-left-4": {
+          "x": 16,
+          "y": 256,
+          "w": 16,
+          "h": 16
+        },
+        "char-water-left-5": {
+          "x": 16,
+          "y": 272,
+          "w": 16,
+          "h": 16
+        },
+        "char-water-right-0": {
+          "x": 16,
+          "y": 288,
+          "w": 16,
+          "h": 16
+        },
+        "char-water-right-1": {
+          "x": 16,
+          "y": 304,
+          "w": 16,
+          "h": 16
+        },
+        "char-water-right-2": {
+          "x": 16,
+          "y": 320,
+          "w": 16,
+          "h": 16
+        },
+        "char-water-right-3": {
+          "x": 16,
+          "y": 336,
+          "w": 16,
+          "h": 16
+        },
+        "char-water-right-4": {
+          "x": 16,
+          "y": 352,
+          "w": 16,
+          "h": 16
+        },
+        "char-water-right-5": {
+          "x": 16,
+          "y": 368,
+          "w": 16,
+          "h": 16
+        },
+        "char-plant-down-0": {
+          "x": 32,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        },
+        "char-plant-down-1": {
+          "x": 32,
+          "y": 16,
+          "w": 16,
+          "h": 16
+        },
+        "char-plant-down-2": {
+          "x": 32,
+          "y": 32,
+          "w": 16,
+          "h": 16
+        },
+        "char-plant-down-3": {
+          "x": 32,
+          "y": 48,
+          "w": 16,
+          "h": 16
+        },
+        "char-plant-down-4": {
+          "x": 32,
+          "y": 64,
+          "w": 16,
+          "h": 16
+        },
+        "char-plant-down-5": {
+          "x": 32,
+          "y": 80,
+          "w": 16,
+          "h": 16
+        },
+        "char-plant-up-0": {
+          "x": 32,
+          "y": 96,
+          "w": 16,
+          "h": 16
+        },
+        "char-plant-up-1": {
+          "x": 32,
+          "y": 112,
+          "w": 16,
+          "h": 16
+        },
+        "char-plant-up-2": {
+          "x": 32,
+          "y": 128,
+          "w": 16,
+          "h": 16
+        },
+        "char-plant-up-3": {
+          "x": 32,
+          "y": 144,
+          "w": 16,
+          "h": 16
+        },
+        "char-plant-up-4": {
+          "x": 32,
+          "y": 160,
+          "w": 16,
+          "h": 16
+        },
+        "char-plant-up-5": {
+          "x": 32,
+          "y": 176,
+          "w": 16,
+          "h": 16
+        },
+        "char-plant-left-0": {
+          "x": 32,
+          "y": 192,
+          "w": 16,
+          "h": 16
+        },
+        "char-plant-left-1": {
+          "x": 32,
+          "y": 208,
+          "w": 16,
+          "h": 16
+        },
+        "char-plant-left-2": {
+          "x": 32,
+          "y": 224,
+          "w": 16,
+          "h": 16
+        },
+        "char-plant-left-3": {
+          "x": 32,
+          "y": 240,
+          "w": 16,
+          "h": 16
+        },
+        "char-plant-left-4": {
+          "x": 32,
+          "y": 256,
+          "w": 16,
+          "h": 16
+        },
+        "char-plant-left-5": {
+          "x": 32,
+          "y": 272,
+          "w": 16,
+          "h": 16
+        },
+        "char-plant-right-0": {
+          "x": 32,
+          "y": 288,
+          "w": 16,
+          "h": 16
+        },
+        "char-plant-right-1": {
+          "x": 32,
+          "y": 304,
+          "w": 16,
+          "h": 16
+        },
+        "char-plant-right-2": {
+          "x": 32,
+          "y": 320,
+          "w": 16,
+          "h": 16
+        },
+        "char-plant-right-3": {
+          "x": 32,
+          "y": 336,
+          "w": 16,
+          "h": 16
+        },
+        "char-plant-right-4": {
+          "x": 32,
+          "y": 352,
+          "w": 16,
+          "h": 16
+        },
+        "char-plant-right-5": {
+          "x": 32,
+          "y": 368,
+          "w": 16,
+          "h": 16
+        },
+        "char-harvest-down-0": {
+          "x": 48,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        },
+        "char-harvest-down-1": {
+          "x": 48,
+          "y": 16,
+          "w": 16,
+          "h": 16
+        },
+        "char-harvest-down-2": {
+          "x": 48,
+          "y": 32,
+          "w": 16,
+          "h": 16
+        },
+        "char-harvest-down-3": {
+          "x": 48,
+          "y": 48,
+          "w": 16,
+          "h": 16
+        },
+        "char-harvest-down-4": {
+          "x": 48,
+          "y": 64,
+          "w": 16,
+          "h": 16
+        },
+        "char-harvest-down-5": {
+          "x": 48,
+          "y": 80,
+          "w": 16,
+          "h": 16
+        },
+        "char-harvest-up-0": {
+          "x": 48,
+          "y": 96,
+          "w": 16,
+          "h": 16
+        },
+        "char-harvest-up-1": {
+          "x": 48,
+          "y": 112,
+          "w": 16,
+          "h": 16
+        },
+        "char-harvest-up-2": {
+          "x": 48,
+          "y": 128,
+          "w": 16,
+          "h": 16
+        },
+        "char-harvest-up-3": {
+          "x": 48,
+          "y": 144,
+          "w": 16,
+          "h": 16
+        },
+        "char-harvest-up-4": {
+          "x": 48,
+          "y": 160,
+          "w": 16,
+          "h": 16
+        },
+        "char-harvest-up-5": {
+          "x": 48,
+          "y": 176,
+          "w": 16,
+          "h": 16
+        },
+        "char-harvest-left-0": {
+          "x": 48,
+          "y": 192,
+          "w": 16,
+          "h": 16
+        },
+        "char-harvest-left-1": {
+          "x": 48,
+          "y": 208,
+          "w": 16,
+          "h": 16
+        },
+        "char-harvest-left-2": {
+          "x": 48,
+          "y": 224,
+          "w": 16,
+          "h": 16
+        },
+        "char-harvest-left-3": {
+          "x": 48,
+          "y": 240,
+          "w": 16,
+          "h": 16
+        },
+        "char-harvest-left-4": {
+          "x": 48,
+          "y": 256,
+          "w": 16,
+          "h": 16
+        },
+        "char-harvest-left-5": {
+          "x": 48,
+          "y": 272,
+          "w": 16,
+          "h": 16
+        },
+        "char-harvest-right-0": {
+          "x": 48,
+          "y": 288,
+          "w": 16,
+          "h": 16
+        },
+        "char-harvest-right-1": {
+          "x": 48,
+          "y": 304,
+          "w": 16,
+          "h": 16
+        },
+        "char-harvest-right-2": {
+          "x": 48,
+          "y": 320,
+          "w": 16,
+          "h": 16
+        },
+        "char-harvest-right-3": {
+          "x": 48,
+          "y": 336,
+          "w": 16,
+          "h": 16
+        },
+        "char-harvest-right-4": {
+          "x": 48,
+          "y": 352,
+          "w": 16,
+          "h": 16
+        },
+        "char-harvest-right-5": {
+          "x": 48,
+          "y": 368,
+          "w": 16,
+          "h": 16
+        },
+        "char-walk-down-0": {
+          "x": 64,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        },
+        "char-walk-down-1": {
+          "x": 64,
+          "y": 16,
+          "w": 16,
+          "h": 16
+        },
+        "char-walk-down-2": {
+          "x": 64,
+          "y": 32,
+          "w": 16,
+          "h": 16
+        },
+        "char-walk-down-3": {
+          "x": 64,
+          "y": 48,
+          "w": 16,
+          "h": 16
+        },
+        "char-walk-down-4": {
+          "x": 64,
+          "y": 64,
+          "w": 16,
+          "h": 16
+        },
+        "char-walk-down-5": {
+          "x": 64,
+          "y": 80,
+          "w": 16,
+          "h": 16
+        },
+        "char-walk-up-0": {
+          "x": 64,
+          "y": 96,
+          "w": 16,
+          "h": 16
+        },
+        "char-walk-up-1": {
+          "x": 64,
+          "y": 112,
+          "w": 16,
+          "h": 16
+        },
+        "char-walk-up-2": {
+          "x": 64,
+          "y": 128,
+          "w": 16,
+          "h": 16
+        },
+        "char-walk-up-3": {
+          "x": 64,
+          "y": 144,
+          "w": 16,
+          "h": 16
+        },
+        "char-walk-up-4": {
+          "x": 64,
+          "y": 160,
+          "w": 16,
+          "h": 16
+        },
+        "char-walk-up-5": {
+          "x": 64,
+          "y": 176,
+          "w": 16,
+          "h": 16
+        },
+        "char-walk-left-0": {
+          "x": 64,
+          "y": 192,
+          "w": 16,
+          "h": 16
+        },
+        "char-walk-left-1": {
+          "x": 64,
+          "y": 208,
+          "w": 16,
+          "h": 16
+        },
+        "char-walk-left-2": {
+          "x": 64,
+          "y": 224,
+          "w": 16,
+          "h": 16
+        },
+        "char-walk-left-3": {
+          "x": 64,
+          "y": 240,
+          "w": 16,
+          "h": 16
+        },
+        "char-walk-left-4": {
+          "x": 64,
+          "y": 256,
+          "w": 16,
+          "h": 16
+        },
+        "char-walk-left-5": {
+          "x": 64,
+          "y": 272,
+          "w": 16,
+          "h": 16
+        },
+        "char-walk-right-0": {
+          "x": 64,
+          "y": 288,
+          "w": 16,
+          "h": 16
+        },
+        "char-walk-right-1": {
+          "x": 64,
+          "y": 304,
+          "w": 16,
+          "h": 16
+        },
+        "char-walk-right-2": {
+          "x": 64,
+          "y": 320,
+          "w": 16,
+          "h": 16
+        },
+        "char-walk-right-3": {
+          "x": 64,
+          "y": 336,
+          "w": 16,
+          "h": 16
+        },
+        "char-walk-right-4": {
+          "x": 64,
+          "y": 352,
+          "w": 16,
+          "h": 16
+        },
+        "char-walk-right-5": {
+          "x": 64,
+          "y": 368,
+          "w": 16,
+          "h": 16
+        },
+        "char-idle-down-0": {
+          "x": 80,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        },
+        "char-idle-down-1": {
+          "x": 80,
+          "y": 16,
+          "w": 16,
+          "h": 16
+        },
+        "char-idle-down-2": {
+          "x": 80,
+          "y": 32,
+          "w": 16,
+          "h": 16
+        },
+        "char-idle-down-3": {
+          "x": 80,
+          "y": 48,
+          "w": 16,
+          "h": 16
+        },
+        "char-idle-down-4": {
+          "x": 80,
+          "y": 64,
+          "w": 16,
+          "h": 16
+        },
+        "char-idle-down-5": {
+          "x": 80,
+          "y": 80,
+          "w": 16,
+          "h": 16
+        },
+        "char-idle-up-0": {
+          "x": 80,
+          "y": 96,
+          "w": 16,
+          "h": 16
+        },
+        "char-idle-up-1": {
+          "x": 80,
+          "y": 112,
+          "w": 16,
+          "h": 16
+        },
+        "char-idle-up-2": {
+          "x": 80,
+          "y": 128,
+          "w": 16,
+          "h": 16
+        },
+        "char-idle-up-3": {
+          "x": 80,
+          "y": 144,
+          "w": 16,
+          "h": 16
+        },
+        "char-idle-up-4": {
+          "x": 80,
+          "y": 160,
+          "w": 16,
+          "h": 16
+        },
+        "char-idle-up-5": {
+          "x": 80,
+          "y": 176,
+          "w": 16,
+          "h": 16
+        },
+        "char-idle-left-0": {
+          "x": 80,
+          "y": 192,
+          "w": 16,
+          "h": 16
+        },
+        "char-idle-left-1": {
+          "x": 80,
+          "y": 208,
+          "w": 16,
+          "h": 16
+        },
+        "char-idle-left-2": {
+          "x": 80,
+          "y": 224,
+          "w": 16,
+          "h": 16
+        },
+        "char-idle-left-3": {
+          "x": 80,
+          "y": 240,
+          "w": 16,
+          "h": 16
+        },
+        "char-idle-left-4": {
+          "x": 80,
+          "y": 256,
+          "w": 16,
+          "h": 16
+        },
+        "char-idle-left-5": {
+          "x": 80,
+          "y": 272,
+          "w": 16,
+          "h": 16
+        },
+        "char-idle-right-0": {
+          "x": 80,
+          "y": 288,
+          "w": 16,
+          "h": 16
+        },
+        "char-idle-right-1": {
+          "x": 80,
+          "y": 304,
+          "w": 16,
+          "h": 16
+        },
+        "char-idle-right-2": {
+          "x": 80,
+          "y": 320,
+          "w": 16,
+          "h": 16
+        },
+        "char-idle-right-3": {
+          "x": 80,
+          "y": 336,
+          "w": 16,
+          "h": 16
+        },
+        "char-idle-right-4": {
+          "x": 80,
+          "y": 352,
+          "w": 16,
+          "h": 16
+        },
+        "char-idle-right-5": {
+          "x": 80,
+          "y": 368,
+          "w": 16,
+          "h": 16
+        }
+      }
+    },
+    "chicken": {
+      "image": "assets/sprites/characters/Free Chicken Sprites.png",
+      "dimensions": {
+        "width": 64,
+        "height": 32
+      },
+      "frameSize": {
+        "width": 16,
+        "height": 16
+      },
+      "grid": {
+        "cols": 4,
+        "rows": 2
+      },
+      "sprites": {
+        "chicken-0": {
+          "x": 0,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        },
+        "chicken-1": {
+          "x": 16,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        },
+        "chicken-2": {
+          "x": 32,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        },
+        "chicken-3": {
+          "x": 48,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        },
+        "chicken-4": {
+          "x": 0,
+          "y": 16,
+          "w": 16,
+          "h": 16
+        },
+        "chicken-5": {
+          "x": 16,
+          "y": 16,
+          "w": 16,
+          "h": 16
+        },
+        "chicken-6": {
+          "x": 32,
+          "y": 16,
+          "w": 16,
+          "h": 16
+        },
+        "chicken-7": {
+          "x": 48,
+          "y": 16,
+          "w": 16,
+          "h": 16
+        }
+      }
+    },
+    "cow": {
+      "image": "assets/sprites/characters/Free Cow Sprites.png",
+      "dimensions": {
+        "width": 96,
+        "height": 64
+      },
+      "frameSize": {
+        "width": 16,
+        "height": 16
+      },
+      "grid": {
+        "cols": 6,
+        "rows": 4
+      },
+      "sprites": {
+        "comment": "Cow sprites - larger animal, may span multiple tiles"
+      }
+    },
+    "grass": {
+      "image": "assets/sprites/tilesets/Grass.png",
+      "dimensions": {
+        "width": 176,
+        "height": 112
+      },
+      "frameSize": {
+        "width": 16,
+        "height": 16
+      },
+      "grid": {
+        "cols": 11,
+        "rows": 7
+      },
+      "sprites": {
+        "grass-center": {
+          "x": 16,
+          "y": 16,
+          "w": 18,
+          "h": 16
+        },
+        "grass-var1": {
+          "x": 0,
+          "y": 80,
+          "w": 16,
+          "h": 16
+        },
+        "grass-var2": {
+          "x": 16,
+          "y": 80,
+          "w": 16,
+          "h": 16
+        },
+        "grass-var3": {
+          "x": 0,
+          "y": 96,
+          "w": 16,
+          "h": 16
+        },
+        "grass-edge-n": {
+          "x": 16,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        },
+        "grass-edge-s": {
+          "x": 16,
+          "y": 32,
+          "w": 16,
+          "h": 16
+        },
+        "grass-edge-e": {
+          "x": 32,
+          "y": 16,
+          "w": 16,
+          "h": 16
+        },
+        "grass-edge-w": {
+          "x": 0,
+          "y": 16,
+          "w": 16,
+          "h": 16
+        },
+        "grass-corner-ne": {
+          "x": 32,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        },
+        "grass-corner-nw": {
+          "x": 0,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        },
+        "grass-corner-se": {
+          "x": 32,
+          "y": 32,
+          "w": 16,
+          "h": 16
+        },
+        "grass-corner-sw": {
+          "x": 0,
+          "y": 32,
+          "w": 16,
+          "h": 16
+        }
+      }
+    },
+    "tilled-dirt": {
+      "image": "assets/sprites/tilesets/Tilled_Dirt.png",
+      "dimensions": {
+        "width": 176,
+        "height": 112
+      },
+      "frameSize": {
+        "width": 16,
+        "height": 16
+      },
+      "grid": {
+        "cols": 11,
+        "rows": 7
+      },
+      "sprites": {
+        "dirt-center": {
+          "x": 16,
+          "y": 16,
+          "w": 16,
+          "h": 16
+        },
+        "dirt-var1": {
+          "x": 16,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        },
+        "dirt-edge-n": {
+          "x": 16,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        },
+        "dirt-edge-s": {
+          "x": 16,
+          "y": 32,
+          "w": 16,
+          "h": 16
+        },
+        "dirt-edge-e": {
+          "x": 32,
+          "y": 16,
+          "w": 16,
+          "h": 16
+        },
+        "dirt-edge-w": {
+          "x": 0,
+          "y": 16,
+          "w": 16,
+          "h": 16
+        },
+        "dirt-corner-ne": {
+          "x": 32,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        },
+        "dirt-corner-nw": {
+          "x": 32,
+          "y": 32,
+          "w": 16,
+          "h": 16
+        },
+        "dirt-corner-se": {
+          "x": 16,
+          "y": 48,
+          "w": 16,
+          "h": 16
+        },
+        "dirt-corner-sw": {
+          "x": 32,
+          "y": 48,
+          "w": 16,
+          "h": 16
+        }
+      }
+    },
+    "fences": {
+      "image": "assets/sprites/tilesets/Fences.png",
+      "dimensions": {
+        "width": 64,
+        "height": 64
+      },
+      "frameSize": {
+        "width": 16,
+        "height": 16
+      },
+      "grid": {
+        "cols": 4,
+        "rows": 4
+      },
+      "sprites": {
+        "fence-post": {
+          "x": 0,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        },
+        "fence-horizontal": {
+          "x": 32,
+          "y": 32,
+          "w": 16,
+          "h": 16
+        },
+        "fence-vertical": {
+          "x": 0,
+          "y": 16,
+          "w": 16,
+          "h": 16
+        },
+        "fence-corner-tl": {
+          "x": 16,
+          "y": 16,
+          "w": 16,
+          "h": 16
+        },
+        "fence-corner-tr": {
+          "x": 48,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        },
+        "fence-corner-bl": {
+          "x": 16,
+          "y": 32,
+          "w": 16,
+          "h": 16
+        },
+        "fence-corner-br": {
+          "x": 48,
+          "y": 32,
+          "w": 16,
+          "h": 16
+        },
+        "fence-gate": {
+          "x": 48,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        }
+      }
+    },
+    "water": {
+      "image": "assets/sprites/tilesets/Water.png",
+      "dimensions": {
+        "width": 64,
+        "height": 16
+      },
+      "frameSize": {
+        "width": 16,
+        "height": 16
+      },
+      "grid": {
+        "cols": 4,
+        "rows": 1
+      },
+      "sprites": {
+        "water-0": {
+          "x": 0,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        },
+        "water-1": {
+          "x": 16,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        },
+        "water-2": {
+          "x": 32,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        },
+        "water-3": {
+          "x": 48,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        }
+      }
+    },
+    "plants": {
+      "image": "assets/sprites/objects/Basic_Plants.png",
+      "dimensions": {
+        "width": 96,
+        "height": 32
+      },
+      "frameSize": {
+        "width": 16,
+        "height": 16
+      },
+      "grid": {
+        "cols": 6,
+        "rows": 2
+      },
+      "sprites": {
+        "seed-bag": {
+          "x": 0,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        },
+        "wheat-1": {
+          "x": 16,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        },
+        "wheat-2": {
+          "x": 32,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        },
+        "wheat-3": {
+          "x": 48,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        },
+        "wheat-4": {
+          "x": 64,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        },
+        "tool-pencil": {
+          "x": 80,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        },
+        "fertilizer": {
+          "x": 0,
+          "y": 16,
+          "w": 16,
+          "h": 16
+        },
+        "seedling-1": {
+          "x": 16,
+          "y": 16,
+          "w": 16,
+          "h": 16
+        },
+        "seedling-2": {
+          "x": 32,
+          "y": 16,
+          "w": 16,
+          "h": 16
+        },
+        "flower": {
+          "x": 48,
+          "y": 16,
+          "w": 16,
+          "h": 16
+        },
+        "pumpkin-1": {
+          "x": 64,
+          "y": 16,
+          "w": 16,
+          "h": 16
+        },
+        "pumpkin-2": {
+          "x": 80,
+          "y": 16,
+          "w": 16,
+          "h": 16
+        }
+      }
+    },
+    "biome": {
+      "image": "assets/sprites/objects/Basic_Grass_Biom_things.png",
+      "dimensions": {
+        "width": 144,
+        "height": 80
+      },
+      "frameSize": {
+        "width": 16,
+        "height": 16
+      },
+      "grid": {
+        "cols": 9,
+        "rows": 5
+      },
+      "sprites": {
+        "mushroom-red": {
+          "x": 48,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        },
+        "mushroom-brown": {
+          "x": 64,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        },
+        "rock-large": {
+          "x": 80,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        },
+        "rock-small": {
+          "x": 96,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        },
+        "heart": {
+          "x": 0,
+          "y": 48,
+          "w": 16,
+          "h": 16
+        },
+        "butterfly-1": {
+          "x": 16,
+          "y": 48,
+          "w": 16,
+          "h": 16
+        },
+        "berry-red": {
+          "x": 32,
+          "y": 48,
+          "w": 16,
+          "h": 16
+        },
+        "berry-green": {
+          "x": 48,
+          "y": 48,
+          "w": 16,
+          "h": 16
+        },
+        "sunflower": {
+          "x": 112,
+          "y": 48,
+          "w": 16,
+          "h": 16
+        },
+        "flower-red": {
+          "x": 128,
+          "y": 48,
+          "w": 16,
+          "h": 16
+        },
+        "grass-tuft-1": {
+          "x": 0,
+          "y": 64,
+          "w": 16,
+          "h": 16
+        },
+        "grass-tuft-2": {
+          "x": 16,
+          "y": 64,
+          "w": 16,
+          "h": 16
+        },
+        "flower-small": {
+          "x": 48,
+          "y": 64,
+          "w": 16,
+          "h": 16
+        },
+        "stone-small": {
+          "x": 80,
+          "y": 64,
+          "w": 16,
+          "h": 16
+        }
+      }
+    },
+    "paths": {
+      "image": "assets/sprites/objects/Paths.png",
+      "dimensions": {
+        "width": 64,
+        "height": 64
+      },
+      "frameSize": {
+        "width": 16,
+        "height": 16
+      },
+      "grid": {
+        "cols": 4,
+        "rows": 4
+      },
+      "sprites": {
+        "path-center": {
+          "x": 0,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        },
+        "path-edge-n": {
+          "x": 16,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        },
+        "path-edge-s": {
+          "x": 16,
+          "y": 32,
+          "w": 16,
+          "h": 16
+        },
+        "path-edge-e": {
+          "x": 32,
+          "y": 16,
+          "w": 16,
+          "h": 16
+        },
+        "path-edge-w": {
+          "x": 0,
+          "y": 16,
+          "w": 16,
+          "h": 16
+        },
+        "path-corner-ne": {
+          "x": 32,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        },
+        "path-corner-nw": {
+          "x": 0,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        },
+        "path-corner-se": {
+          "x": 32,
+          "y": 32,
+          "w": 16,
+          "h": 16
+        },
+        "path-corner-sw": {
+          "x": 0,
+          "y": 32,
+          "w": 16,
+          "h": 16
+        }
+      }
+    },
+    "character-base": {
+      "image": "assets/sprites/characters/Basic Charakter Spritesheet.png",
+      "dimensions": {
+        "width": 192,
+        "height": 192
+      },
+      "frameSize": {
+        "width": 48,
+        "height": 48
+      },
+      "grid": {
+        "cols": 4,
+        "rows": 4
+      },
+      "isCharacter": true,
+      "characterConfig": {
+        "directions": [
+          "down",
+          "up",
+          "left",
+          "right"
+        ],
+        "actions": [
+          "walk"
+        ],
+        "framesPerAction": 4
+      },
+      "sprites": {
+        "char-walk-down-0": {
+          "x": 0,
+          "y": 0,
+          "w": 48,
+          "h": 48
+        },
+        "char-walk-down-1": {
+          "x": 48,
+          "y": 0,
+          "w": 48,
+          "h": 48
+        },
+        "char-walk-down-2": {
+          "x": 96,
+          "y": 0,
+          "w": 48,
+          "h": 48
+        },
+        "char-walk-down-3": {
+          "x": 144,
+          "y": 0,
+          "w": 48,
+          "h": 48
+        },
+        "char-walk-up-0": {
+          "x": 0,
+          "y": 48,
+          "w": 48,
+          "h": 48
+        },
+        "char-walk-up-1": {
+          "x": 48,
+          "y": 48,
+          "w": 48,
+          "h": 48
+        },
+        "char-walk-up-2": {
+          "x": 96,
+          "y": 48,
+          "w": 48,
+          "h": 48
+        },
+        "char-walk-up-3": {
+          "x": 144,
+          "y": 48,
+          "w": 48,
+          "h": 48
+        },
+        "char-walk-left-0": {
+          "x": 0,
+          "y": 96,
+          "w": 48,
+          "h": 48
+        },
+        "char-walk-left-1": {
+          "x": 48,
+          "y": 96,
+          "w": 48,
+          "h": 48
+        },
+        "char-walk-left-2": {
+          "x": 96,
+          "y": 96,
+          "w": 48,
+          "h": 48
+        },
+        "char-walk-left-3": {
+          "x": 144,
+          "y": 96,
+          "w": 48,
+          "h": 48
+        },
+        "char-walk-right-0": {
+          "x": 0,
+          "y": 144,
+          "w": 48,
+          "h": 48
+        },
+        "char-walk-right-1": {
+          "x": 48,
+          "y": 144,
+          "w": 48,
+          "h": 48
+        },
+        "char-walk-right-2": {
+          "x": 96,
+          "y": 144,
+          "w": 48,
+          "h": 48
+        },
+        "char-walk-right-3": {
+          "x": 144,
+          "y": 144,
+          "w": 48,
+          "h": 48
+        }
+      }
+    }
+  },
+  "animations": {
+    "water-flow": {
+      "frames": [
+        "water-0",
+        "water-1",
+        "water-2",
+        "water-3"
+      ],
+      "fps": 4,
+      "loop": true
+    },
+    "chicken-idle": {
+      "frames": [
+        "chicken-0",
+        "chicken-1",
+        "chicken-2",
+        "chicken-3"
+      ],
+      "fps": 4,
+      "loop": true
+    },
+    "wheat-grow": {
+      "frames": [
+        "wheat-1",
+        "wheat-2",
+        "wheat-3",
+        "wheat-4"
+      ],
+      "fps": 1,
+      "loop": false
+    },
+    "seedling-grow": {
+      "frames": [
+        "seedling-1",
+        "seedling-2"
+      ],
+      "fps": 1,
+      "loop": false
+    },
+    "pumpkin-grow": {
+      "frames": [
+        "pumpkin-1",
+        "pumpkin-2"
+      ],
+      "fps": 1,
+      "loop": false
+    },
+    "char-walk-down": {
+      "frames": [
+        "char-walk-down-0",
+        "char-walk-down-1",
+        "char-walk-down-2",
+        "char-walk-down-3",
+        "char-walk-down-4",
+        "char-walk-down-5"
+      ],
+      "fps": 8,
+      "loop": true
+    },
+    "char-walk-up": {
+      "frames": [
+        "char-walk-up-0",
+        "char-walk-up-1",
+        "char-walk-up-2",
+        "char-walk-up-3",
+        "char-walk-up-4",
+        "char-walk-up-5"
+      ],
+      "fps": 8,
+      "loop": true
+    },
+    "char-walk-left": {
+      "frames": [
+        "char-walk-left-0",
+        "char-walk-left-1",
+        "char-walk-left-2",
+        "char-walk-left-3",
+        "char-walk-left-4",
+        "char-walk-left-5"
+      ],
+      "fps": 8,
+      "loop": true
+    },
+    "char-walk-right": {
+      "frames": [
+        "char-walk-right-0",
+        "char-walk-right-1",
+        "char-walk-right-2",
+        "char-walk-right-3",
+        "char-walk-right-4",
+        "char-walk-right-5"
+      ],
+      "fps": 8,
+      "loop": true
+    },
+    "char-idle-down": {
+      "frames": [
+        "char-idle-down-0",
+        "char-idle-down-1",
+        "char-idle-down-2",
+        "char-idle-down-3",
+        "char-idle-down-4",
+        "char-idle-down-5"
+      ],
+      "fps": 4,
+      "loop": true
+    },
+    "char-idle-up": {
+      "frames": [
+        "char-idle-up-0",
+        "char-idle-up-1",
+        "char-idle-up-2",
+        "char-idle-up-3",
+        "char-idle-up-4",
+        "char-idle-up-5"
+      ],
+      "fps": 4,
+      "loop": true
+    },
+    "char-idle-left": {
+      "frames": [
+        "char-idle-left-0",
+        "char-idle-left-1",
+        "char-idle-left-2",
+        "char-idle-left-3",
+        "char-idle-left-4",
+        "char-idle-left-5"
+      ],
+      "fps": 4,
+      "loop": true
+    },
+    "char-idle-right": {
+      "frames": [
+        "char-idle-right-0",
+        "char-idle-right-1",
+        "char-idle-right-2",
+        "char-idle-right-3",
+        "char-idle-right-4",
+        "char-idle-right-5"
+      ],
+      "fps": 4,
+      "loop": true
+    },
+    "char-hoe-down": {
+      "frames": [
+        "char-hoe-down-0",
+        "char-hoe-down-1",
+        "char-hoe-down-2",
+        "char-hoe-down-3",
+        "char-hoe-down-4",
+        "char-hoe-down-5"
+      ],
+      "fps": 8,
+      "loop": true
+    },
+    "char-hoe-up": {
+      "frames": [
+        "char-hoe-up-0",
+        "char-hoe-up-1",
+        "char-hoe-up-2",
+        "char-hoe-up-3",
+        "char-hoe-up-4",
+        "char-hoe-up-5"
+      ],
+      "fps": 8,
+      "loop": true
+    },
+    "char-hoe-left": {
+      "frames": [
+        "char-hoe-left-0",
+        "char-hoe-left-1",
+        "char-hoe-left-2",
+        "char-hoe-left-3",
+        "char-hoe-left-4",
+        "char-hoe-left-5"
+      ],
+      "fps": 8,
+      "loop": true
+    },
+    "char-hoe-right": {
+      "frames": [
+        "char-hoe-right-0",
+        "char-hoe-right-1",
+        "char-hoe-right-2",
+        "char-hoe-right-3",
+        "char-hoe-right-4",
+        "char-hoe-right-5"
+      ],
+      "fps": 8,
+      "loop": true
+    },
+    "char-water-down": {
+      "frames": [
+        "char-water-down-0",
+        "char-water-down-1",
+        "char-water-down-2",
+        "char-water-down-3",
+        "char-water-down-4",
+        "char-water-down-5"
+      ],
+      "fps": 8,
+      "loop": true
+    },
+    "char-water-up": {
+      "frames": [
+        "char-water-up-0",
+        "char-water-up-1",
+        "char-water-up-2",
+        "char-water-up-3",
+        "char-water-up-4",
+        "char-water-up-5"
+      ],
+      "fps": 8,
+      "loop": true
+    },
+    "char-water-left": {
+      "frames": [
+        "char-water-left-0",
+        "char-water-left-1",
+        "char-water-left-2",
+        "char-water-left-3",
+        "char-water-left-4",
+        "char-water-left-5"
+      ],
+      "fps": 8,
+      "loop": true
+    },
+    "char-water-right": {
+      "frames": [
+        "char-water-right-0",
+        "char-water-right-1",
+        "char-water-right-2",
+        "char-water-right-3",
+        "char-water-right-4",
+        "char-water-right-5"
+      ],
+      "fps": 8,
+      "loop": true
+    },
+    "char-plant-down": {
+      "frames": [
+        "char-plant-down-0",
+        "char-plant-down-1",
+        "char-plant-down-2",
+        "char-plant-down-3",
+        "char-plant-down-4",
+        "char-plant-down-5"
+      ],
+      "fps": 8,
+      "loop": true
+    },
+    "char-plant-up": {
+      "frames": [
+        "char-plant-up-0",
+        "char-plant-up-1",
+        "char-plant-up-2",
+        "char-plant-up-3",
+        "char-plant-up-4",
+        "char-plant-up-5"
+      ],
+      "fps": 8,
+      "loop": true
+    },
+    "char-plant-left": {
+      "frames": [
+        "char-plant-left-0",
+        "char-plant-left-1",
+        "char-plant-left-2",
+        "char-plant-left-3",
+        "char-plant-left-4",
+        "char-plant-left-5"
+      ],
+      "fps": 8,
+      "loop": true
+    },
+    "char-plant-right": {
+      "frames": [
+        "char-plant-right-0",
+        "char-plant-right-1",
+        "char-plant-right-2",
+        "char-plant-right-3",
+        "char-plant-right-4",
+        "char-plant-right-5"
+      ],
+      "fps": 8,
+      "loop": true
+    },
+    "char-harvest-down": {
+      "frames": [
+        "char-harvest-down-0",
+        "char-harvest-down-1",
+        "char-harvest-down-2",
+        "char-harvest-down-3",
+        "char-harvest-down-4",
+        "char-harvest-down-5"
+      ],
+      "fps": 8,
+      "loop": true
+    },
+    "char-harvest-up": {
+      "frames": [
+        "char-harvest-up-0",
+        "char-harvest-up-1",
+        "char-harvest-up-2",
+        "char-harvest-up-3",
+        "char-harvest-up-4",
+        "char-harvest-up-5"
+      ],
+      "fps": 8,
+      "loop": true
+    },
+    "char-harvest-left": {
+      "frames": [
+        "char-harvest-left-0",
+        "char-harvest-left-1",
+        "char-harvest-left-2",
+        "char-harvest-left-3",
+        "char-harvest-left-4",
+        "char-harvest-left-5"
+      ],
+      "fps": 8,
+      "loop": true
+    },
+    "char-harvest-right": {
+      "frames": [
+        "char-harvest-right-0",
+        "char-harvest-right-1",
+        "char-harvest-right-2",
+        "char-harvest-right-3",
+        "char-harvest-right-4",
+        "char-harvest-right-5"
+      ],
+      "fps": 8,
+      "loop": true
+    }
+  },
+  "crops": {
+    "wheat": {
+      "growthStages": [
+        "wheat-1",
+        "wheat-2",
+        "wheat-3",
+        "wheat-4"
+      ],
+      "growthRate": "activity"
+    },
+    "pumpkin": {
+      "growthStages": [
+        "seedling-1",
+        "seedling-2",
+        "pumpkin-1",
+        "pumpkin-2"
+      ],
+      "growthRate": "activity"
+    },
+    "flower": {
+      "growthStages": [
+        "seedling-1",
+        "seedling-2",
+        "flower"
+      ],
+      "growthRate": "activity"
+    },
+    "default": {
+      "growthStages": [
+        "seedling-1",
+        "seedling-2"
+      ],
+      "growthRate": "activity"
+    }
+  }
+}
