@@ -4,6 +4,14 @@
   "description": "A pixel-art RPG skin over real Claude Code agent activity",
   "version": "0.1.0",
   "publisher": "codemon",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/GneissFrog/codemon.git"
+  },
+  "bugs": {
+    "url": "https://github.com/GneissFrog/codemon/issues"
+  },
+  "homepage": "https://github.com/GneissFrog/codemon#readme",
   "engines": {
     "vscode": "^1.85.0"
   },
