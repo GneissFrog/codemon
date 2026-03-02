@@ -220,6 +220,7 @@ export class AssetLoader {
 
     return {
       manifest: this.manifest,
+      spriteMappings: this.manifest.spriteMappings || {},
       spritesheets,
     };
   }
@@ -244,6 +245,7 @@ export class AssetLoader {
 
 export interface WebviewAssetData {
   manifest: SpriteManifest;
+  spriteMappings: Record<string, string>;  // purpose -> sheetName
   spritesheets: Record<string, {
     imageUrl: string;
     sprites: Record<string, { x: number; y: number; w: number; h: number }>;

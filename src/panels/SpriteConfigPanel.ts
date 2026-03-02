@@ -72,6 +72,27 @@ export class SpriteConfigPanel implements vscode.WebviewViewProvider {
           const spriteId = (message.data as { spriteId: string | null }).spriteId;
           getGameViewPanel(this._extensionUri).highlightSprite(spriteId);
           break;
+        case 'setActiveCharacterSheet':
+          await this._updateSpriteMapping({ purpose: 'character', sheetName: (message.data as { sheetName: string }).sheetName });
+          break;
+        case 'updateSpriteMapping':
+          await this._updateSpriteMapping(message.data as { purpose: string; sheetName: string });
+          break;
+        case 'browseImage':
+          await this._browseForImage();
+          break;
+        case 'addSpritesheet':
+          await this._addSpritesheet(message.data as {
+            name: string;
+            imagePath: string;
+            frameW: number;
+            frameH: number;
+            autoGen: boolean;
+            isCharacter: boolean;
+            directions?: string;
+            actions?: string;
+          });
+          break;
       }
     });
   }
@@ -257,6 +278,240 @@ export class SpriteConfigPanel implements vscode.WebviewViewProvider {
     }
   }
 
+  /**
+   * Update a sprite mapping (assign a spritesheet to a purpose)
+   */
+  private async _updateSpriteMapping(data: { purpose: string; sheetName: string }): Promise<void> {
+    try {
+      const manifest = await this._readManifest();
+
+      // Initialize spriteMappings if it doesn't exist
+      if (!manifest.spriteMappings) {
+        manifest.spriteMappings = {};
+      }
+
+      const mappings = manifest.spriteMappings as Record<string, string>;
+      mappings[data.purpose] = data.sheetName;
+
+      await this._writeManifest(manifest);
+
+      // Reload assets and notify both webviews
+      const loader = getAssetLoader(this._extensionUri);
+      loader.dispose(); // Clear cache to force reload
+      await loader.load();
+      await this._sendAssets();
+      await getGameViewPanel(this._extensionUri).refreshAssets();
+
+      vscode.window.showInformationMessage(
+        `Set "${data.sheetName}" as the spritesheet for "${data.purpose}"`
+      );
+    } catch (error) {
+      console.error('[SpriteConfig] Failed to update sprite mapping:', error);
+      vscode.window.showErrorMessage(`Failed to update sprite mapping: ${error}`);
+    }
+  }
+
+  /**
+   * Browse for an image file and return the relative path
+   */
+  private async _browseForImage(): Promise<void> {
+    if (!this._view) return;
+
+    const result = await vscode.window.showOpenDialog({
+      canSelectFiles: true,
+      canSelectFolders: false,
+      canSelectMany: false,
+      filters: { 'Image Files': ['png', 'jpg', 'jpeg', 'gif'] },
+      defaultUri: vscode.Uri.joinPath(this._extensionUri, 'assets', 'sprites'),
+    });
+
+    if (result && result[0]) {
+      // Convert absolute path to relative path from extension root
+      const absolutePath = result[0].fsPath;
+      const extensionPath = this._extensionUri.fsPath;
+      let relativePath = absolutePath.replace(extensionPath, '');
+      // Normalize path separators and remove leading slash
+      relativePath = relativePath.replace(/^[\/\\]/, '').replace(/\\/g, '/');
+
+      this._view.webview.postMessage({
+        type: 'selectedImagePath',
+        path: relativePath,
+      });
+    }
+  }
+
+  /**
+   * Add a new spritesheet to the manifest
+   */
+  private async _addSpritesheet(data: {
+    name: string;
+    imagePath: string;
+    frameW: number;
+    frameH: number;
+    autoGen: boolean;
+    isCharacter: boolean;
+    directions?: string;
+    actions?: string;
+  }): Promise<void> {
+    if (!this._view) return;
+
+    try {
+      // Validate name
+      if (!data.name || !data.name.match(/^[a-zA-Z0-9_-]+$/)) {
+        this._view.webview.postMessage({
+          type: 'addSheetError',
+          error: 'Name must contain only letters, numbers, hyphens, and underscores',
+        });
+        return;
+      }
+
+      // Validate image path
+      if (!data.imagePath) {
+        this._view.webview.postMessage({
+          type: 'addSheetError',
+          error: 'Image path is required',
+        });
+        return;
+      }
+
+      // Check if file exists
+      const imageUri = vscode.Uri.joinPath(this._extensionUri, data.imagePath);
+      try {
+        await vscode.workspace.fs.stat(imageUri);
+      } catch {
+        this._view.webview.postMessage({
+          type: 'addSheetError',
+          error: `Image file not found: ${data.imagePath}`,
+        });
+        return;
+      }
+
+      const manifest = await this._readManifest();
+      const sheets = manifest.spritesheets as Record<string, unknown>;
+
+      // Check for duplicate name
+      if (sheets[data.name]) {
+        this._view.webview.postMessage({
+          type: 'addSheetError',
+          error: `Spritesheet "${data.name}" already exists`,
+        });
+        return;
+      }
+
+      // Get image dimensions by reading the file
+      const imageData = await vscode.workspace.fs.readFile(imageUri);
+      // For PNG files, we can extract dimensions from the header
+      // PNG dimensions are at bytes 16-24 (width) and 20-24 (height)
+      let imageWidth = 128;
+      let imageHeight = 128;
+
+      if (imageData.length > 24 && imageData[0] === 0x89 && imageData[1] === 0x50) {
+        // It's a PNG - extract dimensions from IHDR chunk
+        imageWidth = (imageData[16] << 24) | (imageData[17] << 16) | (imageData[18] << 8) | imageData[19];
+        imageHeight = (imageData[20] << 24) | (imageData[21] << 16) | (imageData[22] << 8) | imageData[23];
+      }
+
+      const frameW = data.frameW || 16;
+      const frameH = data.frameH || 16;
+      const cols = Math.floor(imageWidth / frameW);
+      const rows = Math.floor(imageHeight / frameH);
+
+      // Build sprites object
+      const sprites: Record<string, { x: number; y: number; w: number; h: number }> = {};
+
+      if (data.autoGen) {
+        if (data.isCharacter && data.actions && data.directions) {
+          // Generate character sprites based on actions and directions
+          const directions = data.directions.split(',').map(d => d.trim());
+          const actionDefs = data.actions.split(',').map(a => {
+            const [name, frames] = a.trim().split(':');
+            return { name, frames: parseInt(frames) || 4 };
+          });
+
+          let row = 0;
+          for (const actionDef of actionDefs) {
+            for (const dir of directions) {
+              for (let f = 0; f < actionDef.frames; f++) {
+                const spriteName = `char-${actionDef.name}-${dir}-${f}`;
+                sprites[spriteName] = {
+                  x: f * frameW,
+                  y: row * frameH,
+                  w: frameW,
+                  h: frameH,
+                };
+              }
+              row++;
+            }
+          }
+        } else {
+          // Generate grid-based sprites
+          for (let r = 0; r < rows; r++) {
+            for (let c = 0; c < cols; c++) {
+              const spriteName = `sprite-${c}-${r}`;
+              sprites[spriteName] = {
+                x: c * frameW,
+                y: r * frameH,
+                w: frameW,
+                h: frameH,
+              };
+            }
+          }
+        }
+      }
+
+      // Build the spritesheet definition
+      const sheetDef: Record<string, unknown> = {
+        image: data.imagePath,
+        dimensions: { width: imageWidth, height: imageHeight },
+        frameSize: { width: frameW, height: frameH },
+        grid: { cols, rows },
+        sprites,
+      };
+
+      // Add character config if needed
+      if (data.isCharacter) {
+        sheetDef.isCharacter = true;
+        const directions = (data.directions || 'down,up,left,right').split(',').map(d => d.trim());
+        const actionDefs = (data.actions || 'idle:4,walk:6').split(',').map(a => {
+          const [name, frames] = a.trim().split(':');
+          return { name, frames: parseInt(frames) || 4 };
+        });
+
+        sheetDef.characterConfig = {
+          directions,
+          actions: actionDefs.map(a => ({
+            name: a.name,
+            frames: a.frames,
+            skill: undefined,
+            customSkillName: undefined,
+          })),
+        };
+      }
+
+      // Add to manifest
+      sheets[data.name] = sheetDef;
+      await this._writeManifest(manifest);
+
+      // Reload assets and refresh
+      const loader = getAssetLoader(this._extensionUri);
+      loader.dispose();
+      await loader.load();
+      await this._sendAssets();
+      await getGameViewPanel(this._extensionUri).refreshAssets();
+
+      // Notify success
+      this._view.webview.postMessage({ type: 'addSheetSuccess' });
+      vscode.window.showInformationMessage(`Created spritesheet "${data.name}" with ${Object.keys(sprites).length} sprites`);
+
+    } catch (error) {
+      console.error('[SpriteConfig] Failed to add spritesheet:', error);
+      this._view.webview.postMessage({
+        type: 'addSheetError',
+        error: `Failed to create spritesheet: ${error}`,
+      });
+    }
+  }
+
   private _getHtmlForWebview(webview: vscode.Webview): string {
     const nonce = getNonce();
 
@@ -365,6 +620,45 @@ export class SpriteConfigPanel implements vscode.WebviewViewProvider {
     .spritesheet-count {
       color: var(--pixel-muted);
       font-size: 9px;
+    }
+
+    .spritesheet-badge {
+      font-size: 8px;
+      padding: 1px 4px;
+      background: var(--pixel-accent);
+      color: var(--pixel-bg);
+      border-radius: 2px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .spritesheet-actions {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      margin-left: auto;
+    }
+
+    .use-character-btn {
+      font-size: 8px;
+      padding: 2px 6px;
+      background: transparent;
+      color: var(--pixel-muted);
+      border: 1px solid var(--pixel-border);
+      cursor: pointer;
+      white-space: nowrap;
+    }
+
+    .use-character-btn:hover {
+      background: var(--pixel-bg-lighter);
+      color: var(--pixel-fg);
+      border-color: var(--pixel-accent);
+    }
+
+    .use-character-btn.active {
+      background: var(--pixel-accent);
+      color: var(--pixel-bg);
+      border-color: var(--pixel-accent);
     }
 
     .sprite-viewer {
@@ -517,6 +811,165 @@ export class SpriteConfigPanel implements vscode.WebviewViewProvider {
 
     .open-manifest-btn:hover {
       opacity: 0.9;
+    }
+
+    .header-buttons {
+      display: flex;
+      gap: 4px;
+      margin-top: 8px;
+    }
+
+    .header-buttons .open-manifest-btn {
+      flex: 1;
+      margin-top: 0;
+    }
+
+    .add-sheet-btn {
+      flex: 1;
+      padding: 6px;
+      background: var(--pixel-bg-light);
+      color: var(--pixel-accent);
+      border: 1px solid var(--pixel-accent);
+      cursor: pointer;
+      font-size: 10px;
+    }
+
+    .add-sheet-btn:hover {
+      background: var(--pixel-accent);
+      color: var(--pixel-bg);
+    }
+
+    /* Add Spritesheet Form */
+    .add-sheet-form {
+      margin-top: 8px;
+      background: var(--pixel-bg-light);
+      border: 1px solid var(--pixel-border);
+      padding: 8px;
+      display: none;
+    }
+
+    .add-sheet-form.visible {
+      display: block;
+    }
+
+    .form-row {
+      margin-bottom: 6px;
+    }
+
+    .form-row label {
+      display: block;
+      font-size: 9px;
+      color: var(--pixel-muted);
+      margin-bottom: 2px;
+    }
+
+    .form-row input[type="text"],
+    .form-row input[type="number"] {
+      width: 100%;
+      padding: 4px;
+      background: var(--pixel-bg);
+      border: 1px solid var(--pixel-border);
+      color: var(--pixel-fg);
+      font-size: 10px;
+      box-sizing: border-box;
+    }
+
+    .form-row input[type="text"]:focus,
+    .form-row input[type="number"]:focus {
+      border-color: var(--pixel-accent);
+      outline: none;
+    }
+
+    .form-row-inline {
+      display: flex;
+      gap: 8px;
+    }
+
+    .form-row-inline .form-field {
+      flex: 1;
+    }
+
+    .browse-row {
+      display: flex;
+      gap: 4px;
+    }
+
+    .browse-row input {
+      flex: 1;
+    }
+
+    .browse-btn {
+      padding: 4px 8px;
+      background: var(--pixel-bg);
+      border: 1px solid var(--pixel-border);
+      color: var(--pixel-fg);
+      cursor: pointer;
+      font-size: 9px;
+    }
+
+    .browse-btn:hover {
+      border-color: var(--pixel-accent);
+    }
+
+    .form-checkbox {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 10px;
+      color: var(--pixel-fg);
+    }
+
+    .form-checkbox input {
+      margin: 0;
+    }
+
+    .form-actions {
+      display: flex;
+      gap: 4px;
+      margin-top: 8px;
+    }
+
+    .form-actions button {
+      flex: 1;
+      padding: 6px;
+      font-size: 10px;
+      cursor: pointer;
+    }
+
+    .btn-create {
+      background: var(--pixel-success);
+      color: var(--pixel-bg);
+      border: none;
+    }
+
+    .btn-create:hover {
+      opacity: 0.9;
+    }
+
+    .btn-cancel {
+      background: var(--pixel-bg);
+      color: var(--pixel-fg);
+      border: 1px solid var(--pixel-border);
+    }
+
+    .btn-cancel:hover {
+      border-color: var(--pixel-accent);
+    }
+
+    .char-config-section {
+      margin-top: 6px;
+      padding-top: 6px;
+      border-top: 1px solid var(--pixel-border);
+    }
+
+    .char-config-section.hidden {
+      display: none;
+    }
+
+    .error-msg {
+      color: var(--pixel-error);
+      font-size: 9px;
+      margin-top: 4px;
     }
 
     .help-text {
@@ -1055,7 +1508,61 @@ export class SpriteConfigPanel implements vscode.WebviewViewProvider {
       <div class="sprite-list" id="sprite-list"></div>
     </div>
 
-    <button class="open-manifest-btn" id="open-manifest">Open sprite-manifest.json</button>
+    <div class="header-buttons">
+      <button class="add-sheet-btn" id="add-sheet-toggle">+ Add Spritesheet</button>
+      <button class="open-manifest-btn" id="open-manifest">Edit JSON</button>
+    </div>
+
+    <div class="add-sheet-form" id="add-sheet-form">
+      <div class="form-row">
+        <label>Name (unique identifier)</label>
+        <input type="text" id="new-sheet-name" placeholder="e.g., my-sprites">
+      </div>
+      <div class="form-row">
+        <label>Image Path (relative to extension)</label>
+        <div class="browse-row">
+          <input type="text" id="new-sheet-path" placeholder="assets/sprites/my-sheet.png">
+          <button class="browse-btn" id="browse-image">Browse</button>
+        </div>
+      </div>
+      <div class="form-row form-row-inline">
+        <div class="form-field">
+          <label>Frame Width</label>
+          <input type="number" id="new-sheet-frame-w" value="16" min="1">
+        </div>
+        <div class="form-field">
+          <label>Frame Height</label>
+          <input type="number" id="new-sheet-frame-h" value="16" min="1">
+        </div>
+      </div>
+      <div class="form-row">
+        <label class="form-checkbox">
+          <input type="checkbox" id="new-sheet-auto-gen" checked>
+          Auto-generate sprites from grid
+        </label>
+      </div>
+      <div class="form-row">
+        <label class="form-checkbox">
+          <input type="checkbox" id="new-sheet-is-char">
+          Is Character Spritesheet
+        </label>
+      </div>
+      <div class="char-config-section hidden" id="char-config-section">
+        <div class="form-row">
+          <label>Directions (comma-separated)</label>
+          <input type="text" id="new-sheet-directions" value="down,up,left,right">
+        </div>
+        <div class="form-row">
+          <label>Actions (name:frames, e.g., walk:6,idle:4)</label>
+          <input type="text" id="new-sheet-actions" value="idle:4,walk:6">
+        </div>
+      </div>
+      <div class="error-msg" id="add-sheet-error"></div>
+      <div class="form-actions">
+        <button class="btn-create" id="create-sheet">Create</button>
+        <button class="btn-cancel" id="cancel-sheet">Cancel</button>
+      </div>
+    </div>
 
     <div class="help-text">
       Click on the spritesheet viewer to select a sprite region.
@@ -1070,6 +1577,7 @@ export class SpriteConfigPanel implements vscode.WebviewViewProvider {
     // State
     let spritesheets = {};
     let currentSheet = null;
+    let spriteMappings = {};  // purpose -> sheetName
     let zoom = 2;
     let gridW = 16;
     let gridH = 16;
@@ -1154,13 +1662,41 @@ export class SpriteConfigPanel implements vscode.WebviewViewProvider {
 
     // ─── Spritesheet List ──────────────────────────────────────────────
 
+    // Purpose options for sprite assignment
+    const PURPOSES = [
+      { value: '', label: '-- None --' },
+      { value: 'character', label: 'Player Character' },
+      { value: 'chicken', label: 'Chicken NPC' },
+      { value: 'cow', label: 'Cow NPC' },
+      { value: 'grass', label: 'Grass Tiles' },
+      { value: 'tilled-dirt', label: 'Tilled Dirt' },
+      { value: 'fences', label: 'Fences' },
+      { value: 'water', label: 'Water' },
+      { value: 'plants', label: 'Plants/Crops' },
+      { value: 'biome', label: 'Biome Decorations' },
+      { value: 'paths', label: 'Paths' },
+      { value: 'custom', label: 'Custom...' }
+    ];
+
+    // Get what purpose this sheet is assigned to
+    function getSheetPurpose(sheetName) {
+      for (const [purpose, mapped] of Object.entries(spriteMappings)) {
+        if (mapped === sheetName) return purpose;
+      }
+      return '';
+    }
+
     function renderSpritesheetList() {
       sheetList.innerHTML = '';
 
       for (const [name, sheet] of Object.entries(spritesheets)) {
         const item = document.createElement('div');
         item.className = 'spritesheet-item' + (currentSheet === name ? ' selected' : '');
-        item.onclick = () => selectSpritesheet(name);
+        item.onclick = (e) => {
+          // Don't select if clicking the purpose dropdown
+          if (e.target.classList.contains('purpose-select')) return;
+          selectSpritesheet(name);
+        };
 
         const img = document.createElement('img');
         img.className = 'spritesheet-preview';
@@ -1168,15 +1704,50 @@ export class SpriteConfigPanel implements vscode.WebviewViewProvider {
 
         const info = document.createElement('div');
         info.className = 'spritesheet-info';
+
+        const assignedPurpose = getSheetPurpose(name);
+        const isCharacter = sheet.isCharacter === true;
+
+        let nameHtml = \`<div class="spritesheet-name">\${name}\`;
+        if (assignedPurpose) {
+          const purposeLabel = PURPOSES.find(p => p.value === assignedPurpose)?.label || assignedPurpose;
+          nameHtml += \` <span class="spritesheet-badge">\${purposeLabel}</span>\`;
+        }
+        nameHtml += \`</div>\`;
+
         info.innerHTML = \`
-          <div class="spritesheet-name">\${name}</div>
+          \${nameHtml}
           <div class="spritesheet-count">\${Object.keys(sheet.sprites).length} sprites</div>
         \`;
 
         item.appendChild(img);
         item.appendChild(info);
+
+        // Add purpose dropdown for all sheets
+        const actions = document.createElement('div');
+        actions.className = 'spritesheet-actions';
+
+        const purposeSelect = document.createElement('select');
+        purposeSelect.className = 'purpose-select';
+        purposeSelect.innerHTML = PURPOSES.map(p =>
+          \`<option value="\${p.value}" \${assignedPurpose === p.value ? 'selected' : ''}>\${p.label}</option>\`
+        ).join('');
+
+        purposeSelect.onchange = (e) => {
+          e.stopPropagation();
+          const newPurpose = e.target.value;
+          updateSpriteMapping(name, newPurpose);
+        };
+
+        actions.appendChild(purposeSelect);
+        item.appendChild(actions);
+
         sheetList.appendChild(item);
       }
+    }
+
+    function updateSpriteMapping(sheetName, purpose) {
+      vscode.postMessage({ type: 'updateSpriteMapping', data: { purpose, sheetName } });
     }
 
     function selectSpritesheet(name) {
@@ -1754,6 +2325,98 @@ export class SpriteConfigPanel implements vscode.WebviewViewProvider {
       vscode.postMessage({ type: 'openManifest' });
     };
 
+    // ─── Add Spritesheet Form ─────────────────────────────────────────────
+
+    const addSheetForm = document.getElementById('add-sheet-form');
+    const addSheetToggle = document.getElementById('add-sheet-toggle');
+    const charConfigSection = document.getElementById('char-config-section');
+    const isCharCheckbox = document.getElementById('new-sheet-is-char');
+    const addSheetError = document.getElementById('add-sheet-error');
+
+    // Toggle form visibility
+    addSheetToggle.onclick = () => {
+      addSheetForm.classList.toggle('visible');
+      addSheetError.textContent = '';
+    };
+
+    // Toggle character config section
+    isCharCheckbox.onchange = () => {
+      if (isCharCheckbox.checked) {
+        charConfigSection.classList.remove('hidden');
+      } else {
+        charConfigSection.classList.add('hidden');
+      }
+    };
+
+    // Browse for image
+    document.getElementById('browse-image').onclick = () => {
+      vscode.postMessage({ type: 'browseImage' });
+    };
+
+    // Handle selected image path from extension
+    window.addEventListener('message', (event) => {
+      const message = event.data;
+      if (message.type === 'selectedImagePath') {
+        document.getElementById('new-sheet-path').value = message.path;
+      } else if (message.type === 'addSheetError') {
+        addSheetError.textContent = message.error;
+      } else if (message.type === 'addSheetSuccess') {
+        // Hide form and clear fields
+        addSheetForm.classList.remove('visible');
+        document.getElementById('new-sheet-name').value = '';
+        document.getElementById('new-sheet-path').value = '';
+        document.getElementById('new-sheet-frame-w').value = '16';
+        document.getElementById('new-sheet-frame-h').value = '16';
+        document.getElementById('new-sheet-auto-gen').checked = true;
+        document.getElementById('new-sheet-is-char').checked = false;
+        charConfigSection.classList.add('hidden');
+        addSheetError.textContent = '';
+      }
+    });
+
+    // Cancel button
+    document.getElementById('cancel-sheet').onclick = () => {
+      addSheetForm.classList.remove('visible');
+      addSheetError.textContent = '';
+    };
+
+    // Create button
+    document.getElementById('create-sheet').onclick = () => {
+      const name = document.getElementById('new-sheet-name').value.trim();
+      const imagePath = document.getElementById('new-sheet-path').value.trim();
+      const frameW = parseInt(document.getElementById('new-sheet-frame-w').value) || 16;
+      const frameH = parseInt(document.getElementById('new-sheet-frame-h').value) || 16;
+      const autoGen = document.getElementById('new-sheet-auto-gen').checked;
+      const isCharacter = document.getElementById('new-sheet-is-char').checked;
+      const directions = document.getElementById('new-sheet-directions').value.trim();
+      const actions = document.getElementById('new-sheet-actions').value.trim();
+
+      if (!name) {
+        addSheetError.textContent = 'Name is required';
+        return;
+      }
+      if (!imagePath) {
+        addSheetError.textContent = 'Image path is required';
+        return;
+      }
+
+      addSheetError.textContent = '';
+
+      vscode.postMessage({
+        type: 'addSpritesheet',
+        data: {
+          name,
+          imagePath,
+          frameW,
+          frameH,
+          autoGen,
+          isCharacter,
+          directions,
+          actions,
+        },
+      });
+    };
+
     // ─── Tab Switching ────────────────────────────────────────────────────
 
     document.getElementById('tab-update').onclick = () => {
@@ -1862,6 +2525,7 @@ export class SpriteConfigPanel implements vscode.WebviewViewProvider {
         const previousSheet = currentSheet;
 
         spritesheets = message.assets.spritesheets;
+        spriteMappings = message.assets.spriteMappings || {};
         renderSpritesheetList();
 
         // Re-select the previous sheet if it exists, otherwise select first

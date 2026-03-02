@@ -31,10 +31,25 @@ export interface CropDef {
   growthRate: 'activity' | 'tokens' | 'time';
 }
 
+// Sprite purpose types - what a spritesheet can be used for
+export type SpritePurpose =
+  | 'character'      // Player character
+  | 'chicken'        // Chicken NPC
+  | 'cow'            // Cow NPC
+  | 'grass'          // Grass tiles
+  | 'tilled-dirt'    // Tilled dirt tiles
+  | 'fences'         // Fence objects
+  | 'water'          // Water tiles
+  | 'plants'         // Plant/crop objects
+  | 'biome'          // Biome decorations
+  | 'paths'          // Path tiles
+  | 'custom';        // Custom purpose
+
 export interface SpriteManifest {
   version: number;
   description: string;
   tileSize: number;
+  spriteMappings: Record<string, string>;  // purpose -> sheetName
   spritesheets: Record<string, SpritesheetDef>;
   animations: Record<string, AnimationDef>;
   crops: Record<string, CropDef>;

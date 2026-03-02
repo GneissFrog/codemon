@@ -799,6 +799,7 @@ export class GameViewPanel {
     // ─── Sprite System ─────────────────────────────────────────────────
     let spritesheets = {};
     let spritesLoaded = false;
+    let spriteMappings = { character: 'claude-actions' };  // Default mappings, updated from manifest
     const TILE_SIZE = 16;
 
     // ─── Animation System ───────────────────────────────────────────────
@@ -867,6 +868,12 @@ export class GameViewPanel {
       }
 
       console.log('[GameView] Loading sprites...');
+
+      // Store the sprite mappings
+      if (assetsData.spriteMappings) {
+        spriteMappings = assetsData.spriteMappings;
+        console.log('[GameView] Sprite mappings:', spriteMappings);
+      }
 
       for (const [name, sheetData] of Object.entries(assetsData.spritesheets)) {
         try {
@@ -1078,8 +1085,9 @@ export class GameViewPanel {
 
     // Helper: Get character sprite ID based on action, direction, and frame
     function getCharacterSpriteId(action, direction, frameIndex) {
+      const sheet = spriteMappings['character'] || 'claude-actions';
       const frame = frameIndex % 6; // 6 frames per animation
-      return 'claude-actions/char-' + action + '-' + direction + '-' + frame;
+      return sheet + '/char-' + action + '-' + direction + '-' + frame;
     }
 
     // Action-to-animation mapping based on tool name

@@ -2,6 +2,18 @@
   "version": 1,
   "description": "Sprout Lands asset pack - sprite coordinates and animations",
   "tileSize": 16,
+  "spriteMappings": {
+    "character": "claude-actions",
+    "chicken": "chicken",
+    "cow": "cow",
+    "grass": "grass",
+    "tilled-dirt": "tilled-dirt",
+    "fences": "fences",
+    "water": "water",
+    "plants": "plants",
+    "biome": "biome",
+    "paths": "paths"
+  },
   "spritesheets": {
     "claude-actions": {
       "image": "assets/sprites/characters/Basic Charakter Actions.png",
