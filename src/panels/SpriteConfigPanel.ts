@@ -81,6 +81,9 @@ export class SpriteConfigPanel implements vscode.WebviewViewProvider {
         case 'browseImage':
           await this._browseForImage();
           break;
+        case 'replaceImage':
+          await this._replaceSpritesheetImage(message.data as { sheetName: string });
+          break;
         case 'addSpritesheet':
           await this._addSpritesheet(message.data as {
             name: string;
@@ -512,6 +515,88 @@ export class SpriteConfigPanel implements vscode.WebviewViewProvider {
     }
   }
 
+  /**
+   * Replace the image for an existing spritesheet
+   */
+  private async _replaceSpritesheetImage(data: { sheetName: string }): Promise<void> {
+    if (!this._view) return;
+
+    try {
+      // Open file picker to select new image
+      const result = await vscode.window.showOpenDialog({
+        canSelectFiles: true,
+        canSelectFolders: false,
+        canSelectMany: false,
+        filters: { 'Image Files': ['png', 'jpg', 'jpeg', 'gif'] },
+        defaultUri: vscode.Uri.joinPath(this._extensionUri, 'assets', 'sprites'),
+      });
+
+      if (!result || !result[0]) {
+        return; // User cancelled
+      }
+
+      // Convert absolute path to relative path from extension root
+      const absolutePath = result[0].fsPath;
+      const extensionPath = this._extensionUri.fsPath;
+      let relativePath = absolutePath.replace(extensionPath, '');
+      // Normalize path separators and remove leading slash
+      relativePath = relativePath.replace(/^[\/\\]/, '').replace(/\\/g, '/');
+
+      // Check if file exists
+      const imageUri = vscode.Uri.joinPath(this._extensionUri, relativePath);
+      try {
+        await vscode.workspace.fs.stat(imageUri);
+      } catch {
+        vscode.window.showErrorMessage(`Image file not found: ${relativePath}`);
+        return;
+      }
+
+      // Get image dimensions
+      const imageData = await vscode.workspace.fs.readFile(imageUri);
+      let imageWidth = 128;
+      let imageHeight = 128;
+
+      if (imageData.length > 24 && imageData[0] === 0x89 && imageData[1] === 0x50) {
+        imageWidth = (imageData[16] << 24) | (imageData[17] << 16) | (imageData[18] << 8) | imageData[19];
+        imageHeight = (imageData[20] << 24) | (imageData[21] << 16) | (imageData[22] << 8) | imageData[23];
+      }
+
+      const manifest = await this._readManifest();
+      const sheets = manifest.spritesheets as Record<string, Record<string, unknown>>;
+
+      if (!sheets[data.sheetName]) {
+        vscode.window.showErrorMessage(`Spritesheet "${data.sheetName}" not found`);
+        return;
+      }
+
+      // Update the image path and dimensions
+      sheets[data.sheetName].image = relativePath;
+      sheets[data.sheetName].dimensions = { width: imageWidth, height: imageHeight };
+
+      // Update grid based on new dimensions and existing frame size
+      const frameSize = sheets[data.sheetName].frameSize as { width: number; height: number } || { width: 16, height: 16 };
+      sheets[data.sheetName].grid = {
+        cols: Math.floor(imageWidth / frameSize.width),
+        rows: Math.floor(imageHeight / frameSize.height),
+      };
+
+      await this._writeManifest(manifest);
+
+      // Reload assets and refresh
+      const loader = getAssetLoader(this._extensionUri);
+      loader.dispose();
+      await loader.load();
+      await this._sendAssets();
+      await getGameViewPanel(this._extensionUri).refreshAssets();
+
+      vscode.window.showInformationMessage(`Updated image for "${data.sheetName}"`);
+
+    } catch (error) {
+      console.error('[SpriteConfig] Failed to replace image:', error);
+      vscode.window.showErrorMessage(`Failed to replace image: ${error}`);
+    }
+  }
+
   private _getHtmlForWebview(webview: vscode.Webview): string {
     const nonce = getNonce();
 
@@ -699,6 +784,22 @@ export class SpriteConfigPanel implements vscode.WebviewViewProvider {
 
     .zoom-btn:hover {
       background: var(--pixel-bg-lighter);
+    }
+
+    .replace-image-btn {
+      background: var(--pixel-bg);
+      border: 1px solid var(--pixel-border);
+      color: var(--pixel-fg);
+      padding: 2px 8px;
+      cursor: pointer;
+      font-size: 9px;
+      margin-right: 8px;
+    }
+
+    .replace-image-btn:hover {
+      background: var(--pixel-accent);
+      color: var(--pixel-bg);
+      border-color: var(--pixel-accent);
     }
 
     .sprite-canvas-container {
@@ -1348,9 +1449,12 @@ export class SpriteConfigPanel implements vscode.WebviewViewProvider {
       <div class="sprite-viewer">
       <div class="sprite-viewer-header">
         <span class="sprite-viewer-title" id="viewer-title">Select a spritesheet</span>
-        <div class="sprite-viewer-zoom">
-          <button class="zoom-btn" id="zoom-out">-</button>
-          <button class="zoom-btn" id="zoom-in">+</button>
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <button class="replace-image-btn" id="replace-image" style="display: none;">Replace Image</button>
+          <div class="sprite-viewer-zoom">
+            <button class="zoom-btn" id="zoom-out">-</button>
+            <button class="zoom-btn" id="zoom-in">+</button>
+          </div>
         </div>
       </div>
       <div class="grid-size-input">
@@ -1756,6 +1860,12 @@ export class SpriteConfigPanel implements vscode.WebviewViewProvider {
       renderSpriteViewer();
       renderSpriteList();
       viewerTitle.textContent = name;
+
+      // Show/hide replace image button
+      const replaceBtn = document.getElementById('replace-image');
+      if (replaceBtn) {
+        replaceBtn.style.display = name ? 'block' : 'none';
+      }
 
       // Clear worldmap highlight when switching sheets
       vscode.postMessage({ type: 'highlightSprite', data: { spriteId: null } });
@@ -2323,6 +2433,18 @@ export class SpriteConfigPanel implements vscode.WebviewViewProvider {
 
     document.getElementById('open-manifest').onclick = () => {
       vscode.postMessage({ type: 'openManifest' });
+    };
+
+    // ─── Replace Image Button ─────────────────────────────────────────────
+
+    document.getElementById('replace-image').onclick = () => {
+      if (!currentSheet) {
+        return;
+      }
+      vscode.postMessage({
+        type: 'replaceImage',
+        data: { sheetName: currentSheet }
+      });
     };
 
     // ─── Add Spritesheet Form ─────────────────────────────────────────────
