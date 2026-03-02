@@ -2,10 +2,12 @@
  * WorldGenerator — Transforms file tree into a farm world layout
  *
  * Converts the treemap-style layout into a tile-based farm with:
- * - Grass ground
- * - Fenced plots for directories
+ * - Noise-based grass ground with organic variation
+ * - Fenced plots for directories with spacing and jitter
  * - Crops for files
- * - Paths between plots
+ * - MST-connected path network with auto-tiling and gates
+ * - Clustered contextual decorations
+ * - Multiple organic water features
  */
 
 import { WorldMap } from './WorldMap';
@@ -41,6 +43,120 @@ const DEFAULT_CONFIG: GeneratorConfig = {
 const LAYER_GROUND = 0;
 const LAYER_TERRAIN = 1;
 const LAYER_CROPS = 2;
+
+// ─── Noise Utilities ──────────────────────────────────────────────────────────
+
+/** Deterministic hash for 2D integer coordinates */
+function hash2d(ix: number, iy: number): number {
+  let h = (ix * 374761393 + iy * 668265263) >>> 0;
+  h = ((h ^ (h >> 13)) * 1274126177) >>> 0;
+  h = (h ^ (h >> 16)) >>> 0;
+  return (h & 0x7fffffff) / 0x7fffffff; // [0, 1]
+}
+
+/** Smoothstep interpolation */
+function smoothstep(t: number): number {
+  return t * t * (3 - 2 * t);
+}
+
+/** Linear interpolation */
+function lerp(a: number, b: number, t: number): number {
+  return a + (b - a) * t;
+}
+
+/** 2D value noise at continuous coordinates, returns [0, 1] */
+function noise2d(x: number, y: number): number {
+  const ix = Math.floor(x);
+  const iy = Math.floor(y);
+  const fx = smoothstep(x - ix);
+  const fy = smoothstep(y - iy);
+
+  const h00 = hash2d(ix, iy);
+  const h10 = hash2d(ix + 1, iy);
+  const h01 = hash2d(ix, iy + 1);
+  const h11 = hash2d(ix + 1, iy + 1);
+
+  return lerp(lerp(h00, h10, fx), lerp(h01, h11, fx), fy);
+}
+
+/** Multi-octave noise for richer variation */
+function fbmNoise(x: number, y: number, octaves: number = 2): number {
+  let value = 0;
+  let amplitude = 1;
+  let totalAmplitude = 0;
+  let frequency = 1;
+
+  for (let i = 0; i < octaves; i++) {
+    value += noise2d(x * frequency, y * frequency) * amplitude;
+    totalAmplitude += amplitude;
+    amplitude *= 0.5;
+    frequency *= 2;
+  }
+
+  return value / totalAmplitude;
+}
+
+/** Deterministic integer hash for a single value */
+function intHash(n: number): number {
+  let h = ((n * 2654435761) >>> 0);
+  h = ((h ^ (h >> 13)) * 1274126177) >>> 0;
+  return (h ^ (h >> 16)) >>> 0;
+}
+
+/** Deterministic string hash */
+function stringHash(s: string): number {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) {
+    h = ((h << 5) - h + s.charCodeAt(i)) | 0;
+  }
+  return (h >>> 0);
+}
+
+// ─── Plot Rectangle for spacing ───────────────────────────────────────────────
+
+interface PlotRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  tile: MapTile;
+  depth: number;
+}
+
+// ─── Union-Find for Kruskal's MST ────────────────────────────────────────────
+
+class UnionFind {
+  private parent: number[];
+  private rank: number[];
+
+  constructor(size: number) {
+    this.parent = Array.from({ length: size }, (_, i) => i);
+    this.rank = new Array(size).fill(0);
+  }
+
+  find(x: number): number {
+    if (this.parent[x] !== x) {
+      this.parent[x] = this.find(this.parent[x]);
+    }
+    return this.parent[x];
+  }
+
+  union(a: number, b: number): boolean {
+    const ra = this.find(a);
+    const rb = this.find(b);
+    if (ra === rb) return false;
+
+    if (this.rank[ra] < this.rank[rb]) {
+      this.parent[ra] = rb;
+    } else if (this.rank[ra] > this.rank[rb]) {
+      this.parent[rb] = ra;
+    } else {
+      this.parent[rb] = ra;
+      this.rank[ra]++;
+    }
+    return true;
+  }
+}
 
 export class WorldGenerator {
   private map: WorldMap;
@@ -98,58 +214,158 @@ export class WorldGenerator {
     // Clear existing
     this.map.clearTiles();
 
-    // Fill ground with grass
+    // Fill ground with noise-based grass
     this.fillGround(layout.width, layout.height);
 
-    // Convert tiles to plots and render
-    const processedDirs = new Set<string>();
+    // Collect and refine plot positions before placing
+    const dirTiles = layout.tiles.filter(t => t.isDir);
+    const fileTiles = layout.tiles.filter(t => !t.isDir);
+    const plotRects = this.computePlotRects(dirTiles);
 
-    for (const tile of layout.tiles) {
-      if (tile.isDir) {
-        // Create fenced plot for directory
-        this.createDirectoryPlot(tile, processedDirs);
-      } else {
-        // Create crop for file
-        this.createFilePlot(tile);
-      }
+    // Place directory plots with refined spacing
+    for (const rect of plotRects) {
+      this.createDirectoryPlotFromRect(rect);
+    }
+
+    // Place file crops
+    for (const tile of fileTiles) {
+      this.createFilePlot(tile);
     }
 
     // Post-processing
     this.generateWater(layout.width, layout.height);
     this.generatePaths();
+    this.placeFenceGates();
     this.autoTileGrassEdges();
     this.placeDecorations(layout.width, layout.height);
   }
 
+  // ─── Ground Generation ────────────────────────────────────────────────────
+
   /**
-   * Fill the ground layer with grass
+   * Fill the ground layer with noise-based grass variation
    */
   private fillGround(width: number, height: number): void {
     const tileCount = Math.ceil(Math.max(width, height) / 16) + 10;
 
     for (let y = -5; y < tileCount; y++) {
       for (let x = -5; x < tileCount; x++) {
-        // Use varied grass sprites for natural look
-        const variant = (x * 7 + y * 13) % 4;
-        const spriteId = variant === 0 ? 'grass/grass-center' : `grass/grass-var${variant}`;
+        // Two-octave noise for organic grass variation
+        const n = fbmNoise(x * 0.15, y * 0.15, 2);
+
+        let variant: number;
+        let spriteId: string;
+
+        if (n < 0.5) {
+          variant = 0;
+          spriteId = 'grass/grass-center';
+        } else if (n < 0.7) {
+          variant = 1;
+          spriteId = 'grass/grass-var1';
+        } else if (n < 0.85) {
+          variant = 2;
+          spriteId = 'grass/grass-var2';
+        } else {
+          variant = 3;
+          spriteId = 'grass/grass-var3';
+        }
+
         this.map.setTile(x, y, 'grass', spriteId, variant, LAYER_GROUND);
       }
     }
   }
 
-  /**
-   * Create a fenced plot for a directory
-   */
-  private createDirectoryPlot(tile: MapTile, processed: Set<string>): void {
-    const key = `${tile.x},${tile.y}`;
-    if (processed.has(key)) return;
-    processed.add(key);
+  // ─── Plot Spacing & Jitter ──────────────────────────────────────────────
 
-    // Convert pixel coordinates to tile coordinates
-    const startX = Math.floor(tile.x / 16);
-    const startY = Math.floor(tile.y / 16);
-    const width = Math.max(this.config.minPlotWidth, Math.ceil(tile.width / 16));
-    const height = Math.max(this.config.minPlotHeight, Math.ceil(tile.height / 16));
+  /**
+   * Convert MapTiles to plot rectangles with spacing enforcement and jitter
+   */
+  private computePlotRects(dirTiles: MapTile[]): PlotRect[] {
+    if (dirTiles.length === 0) return [];
+
+    // Convert pixel coordinates to tile rectangles
+    const rects: PlotRect[] = dirTiles.map(tile => {
+      const x = Math.floor(tile.x / 16);
+      const y = Math.floor(tile.y / 16);
+      const width = Math.max(this.config.minPlotWidth, Math.ceil(tile.width / 16));
+      const height = Math.max(this.config.minPlotHeight, Math.ceil(tile.height / 16));
+
+      return { x, y, width, height, tile, depth: tile.depth };
+    });
+
+    // Apply deterministic jitter (0 or 1 tile offset based on path hash)
+    for (const rect of rects) {
+      const pathStr = rect.tile.node?.path || `${rect.x},${rect.y}`;
+      const h = stringHash(pathStr);
+      rect.x += (h % 3) - 1;          // -1, 0, or 1
+      rect.y += ((h >> 8) % 3) - 1;   // -1, 0, or 1
+    }
+
+    // Constraint relaxation: push overlapping/too-close plots apart
+    const padding = this.config.padding + 2; // Include fence border space
+    for (let iter = 0; iter < 5; iter++) {
+      let anyMoved = false;
+      for (let i = 0; i < rects.length; i++) {
+        for (let j = i + 1; j < rects.length; j++) {
+          const a = rects[i];
+          const b = rects[j];
+
+          // Check overlap including padding (fence border needs 1 tile each side)
+          const overlapX = (a.x - padding) < (b.x + b.width + padding) &&
+                           (a.x + a.width + padding) > (b.x - padding);
+          const overlapY = (a.y - padding) < (b.y + b.height + padding) &&
+                           (a.y + a.height + padding) > (b.y - padding);
+
+          if (overlapX && overlapY) {
+            // Push apart along the axis with least overlap
+            const aCenterX = a.x + a.width / 2;
+            const aCenterY = a.y + a.height / 2;
+            const bCenterX = b.x + b.width / 2;
+            const bCenterY = b.y + b.height / 2;
+
+            const dx = bCenterX - aCenterX;
+            const dy = bCenterY - aCenterY;
+
+            if (Math.abs(dx) >= Math.abs(dy)) {
+              // Push horizontally
+              const push = dx >= 0 ? 1 : -1;
+              a.x -= push;
+              b.x += push;
+            } else {
+              // Push vertically
+              const push = dy >= 0 ? 1 : -1;
+              a.y -= push;
+              b.y += push;
+            }
+            anyMoved = true;
+          }
+        }
+      }
+      if (!anyMoved) break;
+    }
+
+    // Ensure no plot has negative coordinates (push all into positive space)
+    let minX = 0;
+    let minY = 0;
+    for (const rect of rects) {
+      if (rect.x - 1 < minX) minX = rect.x - 1; // -1 for fence
+      if (rect.y - 1 < minY) minY = rect.y - 1;
+    }
+    if (minX < 0 || minY < 0) {
+      for (const rect of rects) {
+        rect.x -= minX;
+        rect.y -= minY;
+      }
+    }
+
+    return rects;
+  }
+
+  /**
+   * Create a fenced plot from a pre-computed rectangle
+   */
+  private createDirectoryPlotFromRect(rect: PlotRect): void {
+    const { x: startX, y: startY, width, height, tile } = rect;
 
     // Create tilled dirt inside
     this.fillTilledDirt(startX, startY, width, height);
@@ -159,7 +375,7 @@ export class WorldGenerator {
 
     // Create plot record
     const plot: Plot = {
-      id: tile.node?.path || key,
+      id: tile.node?.path || `${startX},${startY}`,
       x: startX,
       y: startY,
       width,
@@ -205,6 +421,8 @@ export class WorldGenerator {
     // Place crop tile on the map
     this.map.setTile(x, y, 'tilled', plot.cropSpriteId, 0, LAYER_CROPS);
   }
+
+  // ─── Tile Placement Helpers ──────────────────────────────────────────────
 
   /**
    * Fill area with tilled dirt
@@ -257,6 +475,8 @@ export class WorldGenerator {
     this.map.setTile(startX + width, startY + height, 'fence', 'fences/fence-corner-br', 0, LAYER_TERRAIN);
   }
 
+  // ─── Crop Helpers ─────────────────────────────────────────────────────────
+
   /**
    * Get crop type for a file
    */
@@ -293,22 +513,90 @@ export class WorldGenerator {
     }
   }
 
+  // ─── Water Generation ─────────────────────────────────────────────────────
+
   /**
-   * Generate a small pond in an open area of the world
+   * Generate 1-3 organic water features in open areas
    */
   private generateWater(width: number, height: number): void {
     const maxTileX = Math.ceil(width / 16) + 4;
     const maxTileY = Math.ceil(height / 16) + 4;
 
-    // Place pond in bottom-right area, offset from plots
-    const pondCenterX = Math.floor(maxTileX * 0.85);
-    const pondCenterY = Math.floor(maxTileY * 0.8);
-    const pondRadius = 2;
+    // Score macro cells to find open areas far from plots
+    const cellSize = 6;
+    const plots = this.map.getAllPlots().filter(p => p.isDirectory);
 
-    for (let y = pondCenterY - pondRadius; y <= pondCenterY + pondRadius; y++) {
-      for (let x = pondCenterX - pondRadius; x <= pondCenterX + pondRadius; x++) {
-        const dist = Math.sqrt((x - pondCenterX) ** 2 + (y - pondCenterY) ** 2);
-        if (dist <= pondRadius + 0.3) {
+    interface PondCandidate {
+      cx: number;
+      cy: number;
+      score: number;
+    }
+
+    const candidates: PondCandidate[] = [];
+
+    for (let cy = 2; cy < maxTileY - 2; cy += cellSize) {
+      for (let cx = 2; cx < maxTileX - 2; cx += cellSize) {
+        // Score = minimum distance to any plot
+        let minDist = Infinity;
+        for (const plot of plots) {
+          const dx = (cx - (plot.x + plot.width / 2));
+          const dy = (cy - (plot.y + plot.height / 2));
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          minDist = Math.min(minDist, dist);
+        }
+        candidates.push({ cx, cy, score: minDist });
+      }
+    }
+
+    // Sort by score (furthest from plots first)
+    candidates.sort((a, b) => b.score - a.score);
+
+    // Place 1-3 ponds depending on world size
+    const worldArea = maxTileX * maxTileY;
+    const pondCount = worldArea > 1500 ? 3 : worldArea > 600 ? 2 : 1;
+    const pondMinSeparation = 8;
+
+    const placedPonds: { cx: number; cy: number }[] = [];
+
+    for (const candidate of candidates) {
+      if (placedPonds.length >= pondCount) break;
+      if (candidate.score < 4) continue; // Too close to a plot
+
+      // Check separation from other ponds
+      let tooClose = false;
+      for (const placed of placedPonds) {
+        const dist = Math.sqrt((candidate.cx - placed.cx) ** 2 + (candidate.cy - placed.cy) ** 2);
+        if (dist < pondMinSeparation) { tooClose = true; break; }
+      }
+      if (tooClose) continue;
+
+      // Place pond with noise-modulated shape
+      const radius = placedPonds.length === 0 ? 3 : 2; // Primary is bigger
+      this.placeOrganicPond(candidate.cx, candidate.cy, radius);
+      placedPonds.push({ cx: candidate.cx, cy: candidate.cy });
+    }
+
+    // Fallback: if no good candidates, place one in the bottom-right
+    if (placedPonds.length === 0) {
+      const pondCenterX = Math.floor(maxTileX * 0.85);
+      const pondCenterY = Math.floor(maxTileY * 0.8);
+      this.placeOrganicPond(pondCenterX, pondCenterY, 2);
+    }
+  }
+
+  /**
+   * Place a single pond with noise-modulated organic shape
+   */
+  private placeOrganicPond(centerX: number, centerY: number, baseRadius: number): void {
+    const scanRadius = baseRadius + 2;
+
+    for (let y = centerY - scanRadius; y <= centerY + scanRadius; y++) {
+      for (let x = centerX - scanRadius; x <= centerX + scanRadius; x++) {
+        const dist = Math.sqrt((x - centerX) ** 2 + (y - centerY) ** 2);
+        // Noise-modulated threshold for irregular edges
+        const threshold = baseRadius + noise2d(x * 0.5, y * 0.5) * 1.5 - 0.5;
+
+        if (dist <= threshold) {
           // Don't overwrite tilled dirt, fences, or crops
           const terrainTile = this.map.getTile(x, y, LAYER_TERRAIN);
           const cropTile = this.map.getTile(x, y, LAYER_CROPS);
@@ -323,51 +611,64 @@ export class WorldGenerator {
     }
   }
 
+  // ─── Path Generation (MST) ──────────────────────────────────────────────
+
   /**
-   * Generate paths between adjacent directory plots.
-   * Connects each plot to the nearest neighbor with a Manhattan path.
+   * Generate paths connecting all directory plots using MST.
+   * All plots are guaranteed to be connected.
    */
   private generatePaths(): void {
     const plots = this.map.getAllPlots().filter(p => p.isDirectory);
     if (plots.length < 2) return;
 
-    // Sort by position for consistent pairing
-    plots.sort((a, b) => a.x - b.x || a.y - b.y);
+    // Build edges between all pairs
+    interface Edge {
+      i: number;
+      j: number;
+      dist: number;
+    }
 
-    const connected = new Set<string>();
-
+    const edges: Edge[] = [];
     for (let i = 0; i < plots.length; i++) {
-      const plotA = plots[i];
-      let nearestDist = Infinity;
-      let nearestPlot: Plot | null = null;
-
-      // Find nearest unconnected neighbor
-      for (let j = 0; j < plots.length; j++) {
-        if (i === j) continue;
-        const plotB = plots[j];
-        const pairKey = [plotA.id, plotB.id].sort().join('|');
-        if (connected.has(pairKey)) continue;
-
-        const dx = (plotB.x + plotB.width / 2) - (plotA.x + plotA.width / 2);
-        const dy = (plotB.y + plotB.height / 2) - (plotA.y + plotA.height / 2);
+      for (let j = i + 1; j < plots.length; j++) {
+        const a = plots[i];
+        const b = plots[j];
+        const dx = (b.x + b.width / 2) - (a.x + a.width / 2);
+        const dy = (b.y + b.height / 2) - (a.y + a.height / 2);
         const dist = Math.abs(dx) + Math.abs(dy);
-
-        if (dist < nearestDist) {
-          nearestDist = dist;
-          nearestPlot = plotB;
-        }
+        edges.push({ i, j, dist });
       }
+    }
 
-      if (!nearestPlot) continue;
+    // Sort by distance for Kruskal's
+    edges.sort((a, b) => a.dist - b.dist);
 
-      const pairKey = [plotA.id, nearestPlot.id].sort().join('|');
-      connected.add(pairKey);
+    // MST using Union-Find
+    const uf = new UnionFind(plots.length);
+    const mstEdges: Edge[] = [];
+    const extraEdges: Edge[] = [];
 
-      // Create Manhattan path from bottom of plotA to top of nearestPlot
+    for (const edge of edges) {
+      if (uf.union(edge.i, edge.j)) {
+        mstEdges.push(edge);
+      } else if (extraEdges.length < 2 && edge.dist < edges[0].dist * 3) {
+        // Add up to 2 short extra edges for loops
+        extraEdges.push(edge);
+      }
+    }
+
+    const allPathEdges = [...mstEdges, ...extraEdges];
+
+    // Place Manhattan paths for each edge
+    for (const edge of allPathEdges) {
+      const plotA = plots[edge.i];
+      const plotB = plots[edge.j];
+
+      // Path from center-bottom of one to center-top of other
       const startX = Math.floor(plotA.x + plotA.width / 2);
       const startY = plotA.y + plotA.height;
-      const endX = Math.floor(nearestPlot.x + nearestPlot.width / 2);
-      const endY = nearestPlot.y - 1;
+      const endX = Math.floor(plotB.x + plotB.width / 2);
+      const endY = plotB.y - 1;
 
       // Walk horizontally first, then vertically
       const minY = Math.min(startY, endY);
@@ -385,10 +686,13 @@ export class WorldGenerator {
         this.placePath(endX, y);
       }
     }
+
+    // Auto-tile paths after all are placed
+    this.autoTilePaths();
   }
 
   /**
-   * Place a single path tile if the location is open grass
+   * Place a single path tile if the location is open (grass or water-adjacent)
    */
   private placePath(x: number, y: number): void {
     const groundTile = this.map.getTile(x, y, LAYER_GROUND);
@@ -403,8 +707,93 @@ export class WorldGenerator {
   }
 
   /**
+   * Auto-tile paths based on NSEW neighbor presence
+   */
+  private autoTilePaths(): void {
+    const allTiles = this.map.getAllTiles();
+    const pathPositions = new Set<string>();
+
+    // Build set of path positions
+    for (const tile of allTiles) {
+      if (tile.type === 'path' && tile.layer === LAYER_GROUND) {
+        pathPositions.add(`${tile.x},${tile.y}`);
+      }
+    }
+
+    // Update each path tile based on neighbors
+    for (const tile of allTiles) {
+      if (tile.type !== 'path' || tile.layer !== LAYER_GROUND) continue;
+
+      const { x, y } = tile;
+      const n = pathPositions.has(`${x},${y - 1}`);
+      const s = pathPositions.has(`${x},${y + 1}`);
+      const e = pathPositions.has(`${x + 1},${y}`);
+      const w = pathPositions.has(`${x - 1},${y}`);
+
+      // Select sprite based on connectivity
+      // Default to center for fully connected or isolated paths
+      let spriteId = 'paths/path-center';
+
+      // The path spritesheet may only have path-center available.
+      // We use it as fallback; if edge sprites exist they will render,
+      // otherwise path-center is fine everywhere.
+      if (n && s && !e && !w) spriteId = 'paths/path-vertical';
+      else if (!n && !s && e && w) spriteId = 'paths/path-horizontal';
+      else if (!n && s && e && !w) spriteId = 'paths/path-corner-nw';
+      else if (!n && s && !e && w) spriteId = 'paths/path-corner-ne';
+      else if (n && !s && e && !w) spriteId = 'paths/path-corner-sw';
+      else if (n && !s && !e && w) spriteId = 'paths/path-corner-se';
+      else if (n && s && e && !w) spriteId = 'paths/path-edge-w';
+      else if (n && s && !e && w) spriteId = 'paths/path-edge-e';
+      else if (!n && s && e && w) spriteId = 'paths/path-edge-n';
+      else if (n && !s && e && w) spriteId = 'paths/path-edge-s';
+      // Endpoints
+      else if (n && !s && !e && !w) spriteId = 'paths/path-end-s';
+      else if (!n && s && !e && !w) spriteId = 'paths/path-end-n';
+      else if (!n && !s && e && !w) spriteId = 'paths/path-end-w';
+      else if (!n && !s && !e && w) spriteId = 'paths/path-end-e';
+
+      this.map.setTile(x, y, 'path', spriteId, 0, LAYER_GROUND);
+    }
+  }
+
+  /**
+   * Replace fence tiles with gates where paths are adjacent
+   */
+  private placeFenceGates(): void {
+    const allTiles = this.map.getAllTiles();
+    const pathPositions = new Set<string>();
+
+    // Build set of path positions
+    for (const tile of allTiles) {
+      if (tile.type === 'path' && tile.layer === LAYER_GROUND) {
+        pathPositions.add(`${tile.x},${tile.y}`);
+      }
+    }
+
+    // Check each fence tile for adjacent paths
+    for (const tile of allTiles) {
+      if (tile.type !== 'fence' || tile.layer !== LAYER_TERRAIN) continue;
+
+      const { x, y } = tile;
+      const hasAdjacentPath =
+        pathPositions.has(`${x},${y - 1}`) ||
+        pathPositions.has(`${x},${y + 1}`) ||
+        pathPositions.has(`${x + 1},${y}`) ||
+        pathPositions.has(`${x - 1},${y}`);
+
+      if (hasAdjacentPath) {
+        // Don't replace corner fences (they look wrong as gates)
+        if (tile.spriteId.includes('corner')) continue;
+        this.map.setTile(x, y, 'fence-gate', 'fences/fence-gate', 0, LAYER_TERRAIN);
+      }
+    }
+  }
+
+  // ─── Auto-tiling ─────────────────────────────────────────────────────────
+
+  /**
    * Auto-tile grass edges where grass meets tilled dirt or fences.
-   * Scans all non-grass tiles and updates adjacent grass to use edge/corner sprites.
    */
   private autoTileGrassEdges(): void {
     const allTiles = this.map.getAllTiles();
@@ -445,25 +834,48 @@ export class WorldGenerator {
     }
   }
 
+  // ─── Clustered Decoration System ──────────────────────────────────────────
+
   /**
-   * Scatter decorative objects on open grass tiles.
+   * Place decorations with contextual clustering.
    */
   private placeDecorations(width: number, height: number): void {
-    const decorationSprites = [
-      'biome/grass-tuft-1',
-      'biome/grass-tuft-2',
-      'biome/flower-small',
-      'biome/stone-small',
-      'biome/mushroom-red',
-      'biome/mushroom-brown',
-      'biome/butterfly-1',
-    ];
-
     const tileCount = Math.ceil(Math.max(width, height) / 16) + 5;
+
+    // Collect contextual info for clustering
+    const waterPositions = new Set<string>();
+    const pathPositions = new Set<string>();
+
+    for (const tile of this.map.getAllTiles()) {
+      if (tile.type === 'water') waterPositions.add(`${tile.x},${tile.y}`);
+      if (tile.type === 'path') pathPositions.add(`${tile.x},${tile.y}`);
+    }
+
+    // Pre-compute flower seed points near water and paths
+    const flowerSeeds: { x: number; y: number }[] = [];
+    const mushroomSeeds: { x: number; y: number }[] = [];
+
+    // Find 3-5 flower seed points near water
+    for (const pos of waterPositions) {
+      const [wx, wy] = pos.split(',').map(Number);
+      const h = intHash(wx * 31 + wy * 17);
+      if ((h % 3) === 0) { // ~33% of water tiles become seeds
+        flowerSeeds.push({ x: wx + ((h >> 4) % 5) - 2, y: wy + ((h >> 8) % 5) - 2 });
+      }
+      if (flowerSeeds.length >= 5) break;
+    }
+
+    // Find 2-3 mushroom clusters near world borders
+    for (let i = 0; i < 3; i++) {
+      const h = intHash(i * 7919 + 42);
+      const edgeX = (h % 2 === 0) ? ((h >> 4) % 4) : tileCount - 3 + ((h >> 4) % 3);
+      const edgeY = (h % 3 === 0) ? ((h >> 8) % 4) : tileCount - 3 + ((h >> 8) % 3);
+      mushroomSeeds.push({ x: edgeX, y: edgeY });
+    }
 
     for (let y = -3; y < tileCount; y++) {
       for (let x = -3; x < tileCount; x++) {
-        // Only place on grass tiles (check that no non-ground tile exists here)
+        // Only place on open grass tiles
         const groundTile = this.map.getTile(x, y, LAYER_GROUND);
         const terrainTile = this.map.getTile(x, y, LAYER_TERRAIN);
         const cropTile = this.map.getTile(x, y, LAYER_CROPS);
@@ -471,15 +883,73 @@ export class WorldGenerator {
         if (!groundTile || groundTile.type !== 'grass') continue;
         if (terrainTile || cropTile) continue;
 
-        // Deterministic pseudo-random using tile position
         const hash = ((x * 31 + y * 17) * 2654435761) >>> 0;
-        const chance = (hash % 100);
+        const n = fbmNoise(x * 0.2, y * 0.2);
 
-        // ~5% chance of decoration
-        if (chance < 5) {
-          const spriteIdx = hash % decorationSprites.length;
-          const spriteId = decorationSprites[spriteIdx];
+        // ── Pass 1: Grass tufts (most common, noise-based) ──
+        if (n > 0.55 && (hash % 100) < 8) {
+          const spriteId = (hash % 2 === 0) ? 'biome/grass-tuft-1' : 'biome/grass-tuft-2';
           this.map.setTile(x, y, 'decoration', spriteId, 0, LAYER_CROPS);
+          continue;
+        }
+
+        // ── Pass 2: Flowers (clustered near water/paths) ──
+        let nearFlowerSeed = false;
+        for (const seed of flowerSeeds) {
+          const dist = Math.abs(x - seed.x) + Math.abs(y - seed.y);
+          if (dist <= 4) { nearFlowerSeed = true; break; }
+        }
+
+        let nearPath = false;
+        for (const dir of [[-1,0],[1,0],[0,-1],[0,1]]) {
+          if (pathPositions.has(`${x + dir[0]},${y + dir[1]}`)) { nearPath = true; break; }
+        }
+
+        if (nearFlowerSeed && (hash % 100) < 15) {
+          this.map.setTile(x, y, 'decoration', 'biome/flower-small', 0, LAYER_CROPS);
+          continue;
+        }
+        if (nearPath && (hash % 100) < 3) {
+          this.map.setTile(x, y, 'decoration', 'biome/flower-small', 0, LAYER_CROPS);
+          continue;
+        }
+
+        // ── Pass 3: Mushrooms (clustered near borders) ──
+        let nearMushroomSeed = false;
+        for (const seed of mushroomSeeds) {
+          const dist = Math.abs(x - seed.x) + Math.abs(y - seed.y);
+          if (dist <= 3) { nearMushroomSeed = true; break; }
+        }
+
+        if (nearMushroomSeed && (hash % 100) < 20) {
+          const spriteId = (hash % 2 === 0) ? 'biome/mushroom-red' : 'biome/mushroom-brown';
+          this.map.setTile(x, y, 'decoration', spriteId, 0, LAYER_CROPS);
+          continue;
+        }
+
+        // ── Pass 4: Stones (near water edges) ──
+        let nearWater = false;
+        for (const dir of [[-1,0],[1,0],[0,-1],[0,1],[-1,-1],[1,-1],[-1,1],[1,1]]) {
+          if (waterPositions.has(`${x + dir[0]},${y + dir[1]}`)) { nearWater = true; break; }
+        }
+
+        if (nearWater && (hash % 100) < 25) {
+          this.map.setTile(x, y, 'decoration', 'biome/stone-small', 0, LAYER_CROPS);
+          continue;
+        }
+
+        // ── Pass 5: Butterflies (only near existing flower decorations, max 5) ──
+        // Check if we already placed a flower nearby (simple: check if any flower seed is close)
+        if (nearFlowerSeed && (hash % 1000) < 5) {
+          this.map.setTile(x, y, 'decoration', 'biome/butterfly-1', 0, LAYER_CROPS);
+          continue;
+        }
+
+        // ── Sparse fallback: occasional decoration anywhere ──
+        if ((hash % 100) < 1) {
+          const idx = hash % 3;
+          const sprites = ['biome/grass-tuft-1', 'biome/stone-small', 'biome/flower-small'];
+          this.map.setTile(x, y, 'decoration', sprites[idx], 0, LAYER_CROPS);
         }
       }
     }

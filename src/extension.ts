@@ -237,7 +237,7 @@ function setupEventRouting(
 function sendMapUpdate(): void {
   const codebaseMapper = getCodebaseMapper();
   // Use a reasonable default canvas size — the panel will resize
-  const layout = codebaseMapper.getLayout(400, 300);
+  const layout = codebaseMapper.getLayout(800, 600);
   console.log(`[CodeMon Map] Sending layout: ${layout.fileCount} files, ${layout.tiles.length} tiles, active: ${layout.activeFile || 'none'}`);
 
   // Generate world tile grid from treemap layout
