@@ -18,6 +18,7 @@ export interface SpritesheetDef {
   frameSize: { width: number; height: number };
   grid: { cols: number; rows: number };
   sprites: Record<string, SpriteDef | { comment: string }>;
+  normalMap?: string;  // Optional: path to normal map image (auto-detected via _n suffix)
 }
 
 export interface AnimationDef {
@@ -70,6 +71,7 @@ export interface LoadedSpritesheet {
   name: string;
   image: unknown | null;  // ImageBitmap in webview, null in extension host
   imageUrl: string;  // Data URL for webview transfer
+  normalMapUrl?: string;  // Data URL for normal map (if exists)
   sprites: Map<string, LoadedSprite>;
 }
 

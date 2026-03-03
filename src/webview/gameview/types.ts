@@ -186,6 +186,7 @@ export interface SpriteDef {
 
 export interface SpritesheetData {
   imageUrl: string;
+  normalMapUrl?: string;  // Data URL for normal map (if exists)
   sprites: Record<string, SpriteDef>;
 }
 
@@ -331,4 +332,31 @@ export interface OptimizedRenderer extends Renderer {
 
   /** Get current viewport bounds */
   getViewportBounds(): ViewportBounds;
+}
+
+// ─── Normal Map Lighting Types ───────────────────────────────────────────────
+
+export interface PointLight {
+  id: string;
+  x: number;            // World X position in pixels
+  y: number;            // World Y position in pixels
+  radius: number;       // Light radius in pixels
+  color: number;        // RGB color as hex (e.g., 0xffaa00)
+  intensity: number;    // Light intensity (0-1)
+  falloff: number;      // Falloff exponent (1 = linear, 2 = quadratic)
+}
+
+export interface DirectionalLight {
+  x: number;            // Direction vector X (-1 to 1)
+  y: number;            // Direction vector Y (-1 to 1)
+  intensity: number;    // Light intensity (0-1)
+  color: number;        // RGB color as hex
+}
+
+export interface LightingState {
+  enabled: boolean;             // Is normal map lighting enabled?
+  ambient: number;              // Ambient light level (0-1)
+  ambientColor: number;         // Ambient light color
+  directional: DirectionalLight;
+  pointLights: PointLight[];
 }

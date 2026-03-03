@@ -26,8 +26,10 @@ import {
   Assets,
 } from 'pixi.js';
 import { GlowFilter } from 'pixi-filters';
-import { Renderer, WebviewAssetData, Tile, ViewportBounds, TILE_SIZE } from './types';
+import { Renderer, WebviewAssetData, Tile, ViewportBounds, TILE_SIZE, LightingState, PointLight } from './types';
 import { TileSpritePool, SpritePool } from './SpritePool';
+import { NormalMapFilter } from './NormalMapFilter';
+import { LightingManager } from './LightingManager';
 
 export class PixiRenderer implements Renderer {
   private app: Application | null = null;
@@ -49,6 +51,7 @@ export class PixiRenderer implements Renderer {
   // Texture storage
   private textures: Map<string, Texture> = new Map();
   private baseTextures: Map<string, Texture> = new Map();
+  private normalMapTextures: Map<string, Texture> = new Map();  // Normal map textures by spritesheet name
 
   // Single Graphics object for overlays (reused each frame)
   private overlayGraphics: Graphics | null = null;
@@ -83,6 +86,11 @@ export class PixiRenderer implements Renderer {
   private lightingOverlay: Graphics | null = null;
   private dayNightEnabled = true;
   private lastLightingUpdate = 0;
+
+  // Normal map lighting system
+  private normalMapFilter: NormalMapFilter | null = null;
+  private lightingManager: LightingManager | null = null;
+  private normalMapEnabled = true;
 
   // Track if tiles need rebuild
   private tilesDirty = true;
@@ -156,6 +164,19 @@ export class PixiRenderer implements Renderer {
         quality: 0.5,
         outerStrength: 2,
         innerStrength: 0,
+      });
+
+      // Create normal map filter for dynamic lighting
+      this.normalMapFilter = new NormalMapFilter();
+
+      // Create lighting manager
+      this.lightingManager = new LightingManager({
+        enabled: this.normalMapEnabled,
+        dayNightCycle: true,
+        agentLight: true,
+        agentLightRadius: 80,
+        agentLightIntensity: 0.8,
+        agentLightColor: 0xffaa44,
       });
 
       // Create lighting overlay for day/night cycle
@@ -331,6 +352,15 @@ export class PixiRenderer implements Renderer {
           this.textures.set(spriteId, subTexture);
         }
 
+        // Load normal map if available
+        if (sheetData.normalMapUrl) {
+          const normalTexture = await this.loadImageFromDataURL(sheetData.normalMapUrl, `${name}_normal`);
+          if (normalTexture) {
+            this.normalMapTextures.set(name, normalTexture);
+            console.log('[PixiRenderer] Loaded normal map for:', name);
+          }
+        }
+
         console.log('[PixiRenderer] Loaded spritesheet:', name, 'sprites:', Object.keys(sheetData.sprites).length);
       } catch (error) {
         console.warn('[PixiRenderer] Failed to load spritesheet:', name, error);
@@ -339,7 +369,20 @@ export class PixiRenderer implements Renderer {
 
     // Update texture cache reference for tile pool
     this.tilePool.setTextureCache(this.textures);
-    console.log('[PixiRenderer] Total textures loaded:', this.textures.size);
+    console.log('[PixiRenderer] Total textures loaded:', this.textures.size, 'normal maps:', this.normalMapTextures.size);
+
+    // Apply normal map filter to world container if we have normal maps
+    if (this.normalMapTextures.size > 0 && this.normalMapFilter && this.worldContainer) {
+      // Set the first normal map as default (we'll use a different approach for multi-sheet)
+      const firstNormalMap = this.normalMapTextures.values().next().value;
+      if (firstNormalMap) {
+        this.normalMapFilter.setNormalMap(firstNormalMap);
+      }
+
+      // Apply filter to world container
+      this.worldContainer.filters = [this.normalMapFilter];
+      console.log('[PixiRenderer] Normal map lighting enabled');
+    }
   }
 
   /**
@@ -825,6 +868,84 @@ export class PixiRenderer implements Renderer {
     return (r << 16) | (g << 8) | b;
   }
 
+  // ─── Normal Map Lighting ─────────────────────────────────────────────────
+
+  /**
+   * Get the lighting manager for controlling light sources
+   */
+  getLightingManager(): LightingManager | null {
+    return this.lightingManager;
+  }
+
+  /**
+   * Update lighting from the lighting manager
+   * Call this once per frame
+   */
+  updateLighting(): void {
+    if (!this.normalMapFilter || !this.lightingManager) return;
+
+    // Update day/night cycle in lighting manager
+    this.lightingManager.updateDayNightCycle();
+
+    // Get current lighting state and apply to filter
+    const state = this.lightingManager.getState();
+    this.normalMapFilter.setLightingState(state);
+  }
+
+  /**
+   * Set agent position for torch light effect
+   */
+  setAgentLightPosition(x: number, y: number): void {
+    if (this.lightingManager) {
+      this.lightingManager.setAgentPosition(x, y);
+    }
+  }
+
+  /**
+   * Add a point light at a specific position
+   */
+  addPointLight(light: PointLight): void {
+    if (this.lightingManager) {
+      this.lightingManager.addPointLight(light);
+    }
+  }
+
+  /**
+   * Remove a point light by ID
+   */
+  removePointLight(id: string): void {
+    if (this.lightingManager) {
+      this.lightingManager.removeLight(id);
+    }
+  }
+
+  /**
+   * Enable or disable normal map lighting
+   */
+  setNormalMapEnabled(enabled: boolean): void {
+    this.normalMapEnabled = enabled;
+    if (this.lightingManager) {
+      this.lightingManager.setEnabled(enabled);
+    }
+    if (this.normalMapFilter) {
+      this.normalMapFilter.setEnabled(enabled);
+    }
+  }
+
+  /**
+   * Check if normal map lighting is enabled
+   */
+  isNormalMapEnabled(): boolean {
+    return this.normalMapEnabled;
+  }
+
+  /**
+   * Check if any normal maps are loaded
+   */
+  hasNormalMaps(): boolean {
+    return this.normalMapTextures.size > 0;
+  }
+
   dispose(): void {
     // Stop ticker and clear callback
     this.updateCallback = null;
@@ -850,6 +971,19 @@ export class PixiRenderer implements Renderer {
       baseTexture.destroy(true);
     }
     this.baseTextures.clear();
+
+    // Clean up normal map textures
+    for (const texture of this.normalMapTextures.values()) {
+      texture.destroy(true);
+    }
+    this.normalMapTextures.clear();
+
+    // Clean up normal map filter
+    if (this.normalMapFilter) {
+      this.normalMapFilter.destroy();
+      this.normalMapFilter = null;
+    }
+    this.lightingManager = null;
 
     // Clean up text cache
     for (const textObj of this.textCache.values()) {

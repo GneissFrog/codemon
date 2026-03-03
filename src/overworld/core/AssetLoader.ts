@@ -104,6 +104,19 @@ export class AssetLoader {
       const mimeType = 'image/png';
       const dataUrl = `data:${mimeType};base64,${base64}`;
 
+      // Try to load normal map (auto-detect via _n suffix)
+      let normalMapUrl: string | undefined;
+      const normalMapPath = def.image.replace('.png', '_n.png');
+      try {
+        const normalMapFullPath = vscode.Uri.joinPath(this.extensionUri, normalMapPath);
+        const normalMapData = await vscode.workspace.fs.readFile(normalMapFullPath);
+        const normalMapBase64 = Buffer.from(normalMapData).toString('base64');
+        normalMapUrl = `data:${mimeType};base64,${normalMapBase64}`;
+        console.log(`[AssetLoader] Found normal map for "${name}": ${normalMapPath}`);
+      } catch {
+        // Normal map doesn't exist - this is fine, not all spritesheets need them
+      }
+
       // Parse sprite definitions
       const sprites = new Map<string, LoadedSprite>();
 
@@ -126,10 +139,11 @@ export class AssetLoader {
         name,
         image: null,  // Will be created in webview
         imageUrl: dataUrl,
+        normalMapUrl,
         sprites,
       });
 
-      console.log(`[AssetLoader] Loaded spritesheet "${name}": ${sprites.size} sprites`);
+      console.log(`[AssetLoader] Loaded spritesheet "${name}": ${sprites.size} sprites${normalMapUrl ? ' (+normal map)' : ''}`);
     } catch (error) {
       console.warn(`[AssetLoader] Failed to load spritesheet "${name}":`, error);
     }
@@ -182,6 +196,7 @@ export class AssetLoader {
 
     const spritesheets: Record<string, {
       imageUrl: string;
+      normalMapUrl?: string;
       sprites: Record<string, { x: number; y: number; w: number; h: number }>;
       isCharacter?: boolean;
       characterConfig?: CharacterConfig;
@@ -212,6 +227,7 @@ export class AssetLoader {
 
       spritesheets[name] = {
         imageUrl: sheet.imageUrl,
+        normalMapUrl: sheet.normalMapUrl,
         sprites,
         isCharacter: manifestSheet?.isCharacter,
         characterConfig,
@@ -248,6 +264,7 @@ export interface WebviewAssetData {
   spriteMappings: Record<string, string>;  // purpose -> sheetName
   spritesheets: Record<string, {
     imageUrl: string;
+    normalMapUrl?: string;
     sprites: Record<string, { x: number; y: number; w: number; h: number }>;
     isCharacter?: boolean;
     characterConfig?: CharacterConfig;

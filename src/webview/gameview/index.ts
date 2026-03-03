@@ -124,6 +124,11 @@ export async function initGameView(options: {
       engine.emitDustPuff(engine.state.agent.x, engine.state.agent.y);
     }
 
+    // Update normal map lighting (agent torch + day/night)
+    const agent = engine.state.agent;
+    (renderer as PixiRenderer).setAgentLightPosition(agent.x, agent.y);
+    (renderer as PixiRenderer).updateLighting();
+
     // Render HUD (separate from PixiJS)
     drawHudSprite();
 
