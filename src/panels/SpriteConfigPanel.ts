@@ -651,6 +651,14 @@ export class SpriteConfigPanel implements vscode.WebviewViewProvider {
 
     .section-content.collapsed {
       max-height: 0 !important;
+      padding: 0 8px;
+    }
+
+    /* Temporarily visible for height measurement */
+    .section-content.measuring {
+      visibility: hidden;
+      max-height: none !important;
+      padding: 8px;
     }
 
     .spritesheet-list {
@@ -1732,6 +1740,23 @@ export class SpriteConfigPanel implements vscode.WebviewViewProvider {
     // Track collapsed state for each section
     const collapsedSections = new Set();
 
+    // Helper to measure actual content height
+    function measureContentHeight(content) {
+      // Temporarily make visible to get accurate scrollHeight
+      content.classList.add('measuring');
+      const height = content.scrollHeight;
+      content.classList.remove('measuring');
+      return height;
+    }
+
+    // Helper to update maxHeight for a section (call after content changes)
+    function updateSectionHeight(sectionName) {
+      const content = document.querySelector(\`.section-content[data-section="\${sectionName}"]\`);
+      if (content && !collapsedSections.has(sectionName)) {
+        content.style.maxHeight = measureContentHeight(content) + 'px';
+      }
+    }
+
     // Add click handlers to all section titles
     document.querySelectorAll('.section-title[data-section]').forEach(title => {
       title.addEventListener('click', () => {
@@ -1742,17 +1767,21 @@ export class SpriteConfigPanel implements vscode.WebviewViewProvider {
         const isCollapsed = collapsedSections.has(sectionName);
 
         if (isCollapsed) {
-          // Expand
-          collapsedSections.delete(sectionName);
+          // Expand - measure first, then animate
+          const height = measureContentHeight(content);
           title.classList.remove('collapsed');
           content.classList.remove('collapsed');
-          content.style.maxHeight = content.scrollHeight + 'px';
+          content.style.maxHeight = height + 'px';
+          collapsedSections.delete(sectionName);
         } else {
-          // Collapse
-          collapsedSections.add(sectionName);
+          // Collapse - set height first for smooth transition, then collapse
+          content.style.maxHeight = content.scrollHeight + 'px';
+          // Force reflow to apply the current height
+          content.offsetHeight;
           title.classList.add('collapsed');
           content.classList.add('collapsed');
           content.style.maxHeight = '0';
+          collapsedSections.add(sectionName);
         }
       });
 
@@ -1760,7 +1789,7 @@ export class SpriteConfigPanel implements vscode.WebviewViewProvider {
       const sectionName = title.dataset.section;
       const content = document.querySelector(\`.section-content[data-section="\${sectionName}"]\`);
       if (content) {
-        content.style.maxHeight = content.scrollHeight + 'px';
+        content.style.maxHeight = measureContentHeight(content) + 'px';
       }
     });
 
@@ -1848,6 +1877,9 @@ export class SpriteConfigPanel implements vscode.WebviewViewProvider {
 
         sheetList.appendChild(item);
       }
+
+      // Update section height after content changes
+      updateSectionHeight('spritesheets');
     }
 
     function updateSpriteMapping(sheetName, purpose) {
@@ -1997,6 +2029,9 @@ export class SpriteConfigPanel implements vscode.WebviewViewProvider {
         const item = createActionItem(action, index);
         listEl.appendChild(item);
       });
+
+      // Update section height after content changes
+      updateSectionHeight('action-editor');
     }
 
     function createActionItem(action, index) {
@@ -2390,17 +2425,20 @@ export class SpriteConfigPanel implements vscode.WebviewViewProvider {
       const cachedImg = imageCache.get(sheet.imageUrl);
       if (cachedImg && cachedImg.complete) {
         drawThumbnails(cachedImg);
+        updateSectionHeight('sprites-in-sheet');
       } else {
         // Load the image
         const img = new Image();
         img.onload = () => {
           imageCache.set(sheet.imageUrl, img);
           drawThumbnails(img);
+          updateSectionHeight('sprites-in-sheet');
         };
         img.src = sheet.imageUrl;
         if (img.complete) {
           imageCache.set(sheet.imageUrl, img);
           drawThumbnails(img);
+          updateSectionHeight('sprites-in-sheet');
         }
       }
     }
