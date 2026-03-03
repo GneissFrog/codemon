@@ -352,7 +352,7 @@ export class GameViewPanel {
       const assets = loader.getWebviewAssets();
 
       this._panel.webview.postMessage({
-        type: 'loadAssets',
+        type: 'refreshAssets',
         assets,
       });
     } catch (error) {

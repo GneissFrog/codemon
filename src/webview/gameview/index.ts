@@ -8,7 +8,7 @@
 
 import { GameEngine, SPRITE_COLORS, ANIMATIONS } from './engine';
 import { Camera } from './camera';
-import { PixiRenderer } from './pixi-renderer';
+import { PhaserRenderer } from './phaser-renderer';
 import {
   Renderer,
   WebviewAssetData,
@@ -96,16 +96,15 @@ export async function initGameView(options: {
   engine = new GameEngine();
   camera = new Camera();
 
-  // Initialize PixiJS renderer
-  renderer = new PixiRenderer();
+  // Initialize Phaser renderer
+  renderer = new PhaserRenderer();
   await renderer.init(canvas);
-  console.log('[GameView] Using PixiJS renderer');
-  rendererBadge.textContent = 'WebGL';
-  rendererBadge.classList.add('pixi');
+  console.log('[GameView] Using Phaser 3 renderer');
+  rendererBadge.textContent = 'Phaser';
+  rendererBadge.classList.add('phaser');
 
-  // Set up the update callback for PixiJS Ticker
-  // This replaces manual requestAnimationFrame
-  (renderer as PixiRenderer).setUpdatesPerFrame((deltaTime: number) => {
+  // Set up the update callback for Phaser game loop
+  (renderer as PhaserRenderer).setUpdatesPerFrame((deltaTime: number) => {
     // Update game state
     const now = performance.now();
     engine.update(deltaTime * 16.67, now, animFrame, engine.state.worldWidth, engine.state.worldHeight); // Convert to ms equivalent
@@ -119,15 +118,15 @@ export async function initGameView(options: {
       }
     }
 
-    // Emit dust while walking
+    // Emit dust while walking using Phaser particles
     if (engine.state.agent.isMoving && animFrame % 10 === 0) {
-      engine.emitDustPuff(engine.state.agent.x, engine.state.agent.y);
+      (renderer as PhaserRenderer).emitDust(engine.state.agent.x, engine.state.agent.y + 6);
     }
 
     // Update normal map lighting (agent torch + day/night)
     const agent = engine.state.agent;
-    (renderer as PixiRenderer).setAgentLightPosition(agent.x, agent.y);
-    (renderer as PixiRenderer).updateLighting();
+    (renderer as PhaserRenderer).setAgentLightPosition(agent.x, agent.y);
+    (renderer as PhaserRenderer).updateLighting();
 
     // Render HUD (separate from PixiJS)
     drawHudSprite();
@@ -151,10 +150,10 @@ export async function initGameView(options: {
   // Set up message handler
   setupMessageHandler();
 
-  // Start the PixiJS ticker (begins rendering loop)
-  (renderer as PixiRenderer).startTicker();
+  // Start the Phaser game loop
+  (renderer as PhaserRenderer).startTicker();
 
-  console.log('[GameView] Initialized with PixiJS Ticker');
+  console.log('[GameView] Initialized with Phaser 3');
 }
 
 // ─── Rendering ─────────────────────────────────────────────────────────────
@@ -174,7 +173,7 @@ function renderMap(): void {
   renderer.setTransform(camera.state.panX, camera.state.panY, camera.state.zoom);
 
   // Update day/night cycle lighting
-  (renderer as PixiRenderer).updateDayNightCycle(worldWidth, worldHeight);
+  (renderer as PhaserRenderer).updateDayNightCycle(worldWidth, worldHeight);
 
   // Draw highlight overlays for matching sprites (on static tiles)
   if (highlightSpriteId) {
@@ -215,39 +214,15 @@ function renderMap(): void {
     renderer.drawSprite(spriteId, sa.x - 8, sa.y - 8, 16, 16);
   }
 
-  // Draw growth effects
+  // Draw growth effects using Phaser particles
   for (const effect of engine.state.growthEffects) {
-    const elapsed = performance.now() - effect.startTime;
-    if (elapsed < GROWTH_EFFECT_DURATION) {
-      const progress = elapsed / GROWTH_EFFECT_DURATION;
-      const alpha = 1 - progress;
-      const cx = (effect.x + 0.5) * TILE_SIZE;
-      const cy = (effect.y + 0.5) * TILE_SIZE;
-
-      // Sparkle ring
-      for (let p = 0; p < 6; p++) {
-        const angle = (p / 6) * Math.PI * 2 + progress * 2;
-        const radius = 2 + progress * 6;
-        const sx = cx + Math.cos(angle) * radius;
-        const sy = cy + Math.sin(angle) * radius;
-        renderer.drawRect(sx - 0.5, sy - 0.5, 1, 1, '#64dc3c', alpha * 0.8);
-      }
-
-      // Center glow
-      renderer.drawRect(cx - 3, cy - 3, 6, 6, '#ffff64', alpha * 0.4);
-    }
+    const cx = (effect.x + 0.5) * TILE_SIZE;
+    const cy = (effect.y + 0.5) * TILE_SIZE;
+    (renderer as PhaserRenderer).emitGrowth(cx, cy);
   }
 
-  // Draw particles
-  for (const p of engine.state.particles) {
-    const elapsed = performance.now() - p.startTime;
-    const alpha = 1 - (elapsed / p.duration);
-    const color = `rgb(${p.color[0]},${p.color[1]},${p.color[2]})`;
-    renderer.drawRect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size, color, alpha * 0.8);
-  }
-
-  // Draw weather particles
-  (renderer as PixiRenderer).drawWeatherParticles(engine.weather.particles);
+  // Particles and weather are now handled by Phaser's particle system
+  // No need to manually draw them here
 
   // Draw hover highlight
   if (hoveredPlot) {
@@ -269,13 +244,10 @@ function drawAgent(): void {
   const action = agent.animation || 'idle';
   const dir = agent.direction || 'down';
 
-  // Try spritesheet first
-  const sheet = 'claude-actions';
-  const spriteId = `${sheet}/char-${action}-${dir}-${agent.frameIndex % 6}`;
+  // Use Phaser-based agent sprite with animations
+  (renderer as PhaserRenderer).updateAgentSprite(agent.x, agent.y, action, dir);
 
-  renderer.drawSprite(spriteId, agent.x - 8, agent.y - 12, 16, 24);
-
-  // Draw cursor indicator
+  // Draw cursor indicator (glow effect around agent)
   const cursorAlpha = 0.5 + Math.sin(glowPhase * 5) * 0.3;
   renderer.drawRect(agent.x - 8, agent.y - 12, 16, 24, '#ffec27', cursorAlpha);
 }
@@ -417,6 +389,17 @@ function setupMessageHandler(): void {
         }
         break;
 
+      case 'refreshAssets':
+        // Force reload all assets (from SpriteConfigPanel updates)
+        if (message.assets) {
+          await (renderer as PhaserRenderer).refreshAssets(message.assets);
+          // Re-set tiles to pick up new sprite definitions
+          if (engine.state.tiles.length > 0) {
+            (renderer as any).setTiles(engine.state.tiles);
+          }
+        }
+        break;
+
       case 'updateMap':
         if (message.assets) {
           await loadAssets(message.assets);
@@ -443,7 +426,7 @@ function setupMessageHandler(): void {
         engine.wander.isPaused = false;
         engine.agentPath = [];
         if (message.animation === 'write') {
-          engine.emitWriteSparkles(engine.state.agent.x, engine.state.agent.y - 4);
+          (renderer as PhaserRenderer).emitSparkles(engine.state.agent.x, engine.state.agent.y - 4);
         }
         break;
 
