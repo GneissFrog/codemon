@@ -108,7 +108,7 @@ export async function initGameView(options: {
   (renderer as PixiRenderer).setUpdatesPerFrame((deltaTime: number) => {
     // Update game state
     const now = performance.now();
-    engine.update(deltaTime * 16.67, now, animFrame); // Convert to ms equivalent
+    engine.update(deltaTime * 16.67, now, animFrame, engine.state.worldWidth, engine.state.worldHeight); // Convert to ms equivalent
 
     // Update agent animation frame
     if (animFrame % 15 === 0) {
@@ -167,6 +167,9 @@ function renderMap(): void {
 
   // Apply camera transform
   renderer.setTransform(camera.state.panX, camera.state.panY, camera.state.zoom);
+
+  // Update day/night cycle lighting
+  (renderer as PixiRenderer).updateDayNightCycle(worldWidth, worldHeight);
 
   // Draw highlight overlays for matching sprites (on static tiles)
   if (highlightSpriteId) {
@@ -237,6 +240,9 @@ function renderMap(): void {
     const color = `rgb(${p.color[0]},${p.color[1]},${p.color[2]})`;
     renderer.drawRect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size, color, alpha * 0.8);
   }
+
+  // Draw weather particles
+  (renderer as PixiRenderer).drawWeatherParticles(engine.weather.particles);
 
   // Draw hover highlight
   if (hoveredPlot) {

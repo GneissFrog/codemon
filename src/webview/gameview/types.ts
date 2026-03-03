@@ -4,7 +4,9 @@
 
 // ─── Core Types ──────────────────────────────────────────────────────────
 
-export const TILE_SIZE = 8;
+export const TILE_SIZE = 16; // Base tile size in pixels
+export const RENDER_SCALE = 1; // Optional downscaling for performance
+export const SCALED_TILE = TILE_SIZE * RENDER_SCALE;
 
 export type TileType = 'grass' | 'dirt' | 'tilled' | 'water' | 'path' | 'fence' | 'fence-gate' | 'decoration';
 
@@ -64,6 +66,63 @@ export interface SubagentState {
   path: { x: number; y: number }[];
 }
 
+// ─── Animal Behavior Types ────────────────────────────────────────────────
+
+export type AnimalBehavior = 'wander' | 'graze' | 'forage' | 'swim';
+
+export interface AnimalBehaviorConfig {
+  type: string;
+  behavior: AnimalBehavior;
+  speed: number;           // Movement speed multiplier
+  pauseMin: number;        // Minimum pause duration (ms)
+  pauseMax: number;        // Maximum pause duration (ms)
+  wanderRadius: number;    // How far from current position to wander
+  directionChangeChance: number; // 0-1, chance to change direction randomly
+  preferredTiles?: TileType[];   // Tiles this animal prefers to stay near
+}
+
+export const ANIMAL_BEHAVIORS: Record<string, AnimalBehaviorConfig> = {
+  chicken: {
+    type: 'chicken',
+    behavior: 'wander',
+    speed: 1.2,
+    pauseMin: 1000,
+    pauseMax: 2500,
+    wanderRadius: 6,
+    directionChangeChance: 0.3,
+  },
+  cow: {
+    type: 'cow',
+    behavior: 'graze',
+    speed: 0.6,
+    pauseMin: 3000,
+    pauseMax: 6000,
+    wanderRadius: 4,
+    directionChangeChance: 0.1,
+    preferredTiles: ['grass'],
+  },
+  pig: {
+    type: 'pig',
+    behavior: 'forage',
+    speed: 0.9,
+    pauseMin: 2000,
+    pauseMax: 4000,
+    wanderRadius: 5,
+    directionChangeChance: 0.2,
+    preferredTiles: ['tilled', 'dirt'],
+  },
+  duck: {
+    type: 'duck',
+    behavior: 'swim',
+    speed: 0.8,
+    pauseMin: 1500,
+    pauseMax: 3500,
+    wanderRadius: 5,
+    directionChangeChance: 0.15,
+    preferredTiles: ['water'],
+  },
+};
+
 // ─── Particle & Effect Types ──────────────────────────────────────────────
 
 export interface Particle {
@@ -82,6 +141,28 @@ export interface GrowthEffect {
   y: number;
   startTime: number;
   stage: number;
+}
+
+// ─── Weather Types ────────────────────────────────────────────────────────
+
+export type WeatherType = 'clear' | 'rain' | 'snow' | 'storm';
+
+export interface WeatherParticle {
+  x: number;
+  y: number;
+  speed: number;
+  type: 'rain' | 'snow';
+  size: number;
+  alpha: number;
+  drift?: number; // Horizontal drift for snow
+}
+
+export interface WeatherState {
+  current: WeatherType;
+  particles: WeatherParticle[];
+  intensity: number; // 0-1, controls particle count
+  windDirection: number; // -1 to 1, affects horizontal movement
+  enabled: boolean;
 }
 
 // ─── Animation System Types ───────────────────────────────────────────────

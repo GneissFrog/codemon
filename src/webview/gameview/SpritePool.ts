@@ -5,7 +5,7 @@
  * new ones every frame.
  */
 
-import { Sprite, Texture, Container } from 'pixi.js';
+import { Sprite, Texture, Container, Rectangle } from 'pixi.js';
 
 export interface PooledSprite {
   sprite: Sprite;
@@ -126,7 +126,7 @@ export class TileSpritePool {
   /**
    * Update or create a tile sprite at the given position
    */
-  setTile(key: string, textureId: string, x: number, y: number): Sprite | null {
+  setTile(key: string, textureId: string, x: number, y: number, tileSize?: number): Sprite | null {
     if (!this.container || !this.textureCache) return null;
 
     const texture = this.textureCache.get(textureId);
@@ -138,6 +138,11 @@ export class TileSpritePool {
       sprite = new Sprite(texture);
       sprite.x = x;
       sprite.y = y;
+      // Enable built-in PixiJS culling for better performance
+      sprite.cullable = true;
+      if (tileSize) {
+        sprite.cullArea = new Rectangle(x, y, tileSize, tileSize);
+      }
       this.container.addChild(sprite);
       this.tiles.set(key, sprite);
     } else {

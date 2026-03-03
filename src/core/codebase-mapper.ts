@@ -82,7 +82,7 @@ const ACTIVE_DECAY_MS = 3000;
 
 // ─── Tile sizing ────────────────────────────────────────────────────────────
 
-const TILE_SIZE = 10;
+const TILE_SIZE = 16;
 const TILE_GAP = 1;
 const DIR_HEADER_HEIGHT = 14;
 const DIR_PADDING = 2;

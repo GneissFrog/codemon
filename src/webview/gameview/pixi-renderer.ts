@@ -22,7 +22,10 @@ import {
   TextStyle,
   ImageSource,
   AnimatedSprite,
+  BitmapText,
+  Assets,
 } from 'pixi.js';
+import { GlowFilter } from 'pixi-filters';
 import { Renderer, WebviewAssetData, Tile, ViewportBounds, TILE_SIZE } from './types';
 import { TileSpritePool, SpritePool } from './SpritePool';
 
@@ -37,6 +40,7 @@ export class PixiRenderer implements Renderer {
   private cropsContainer: Container | null = null;
   private charactersContainer: Container | null = null;
   private effectsContainer: Container | null = null;
+  private uiContainer: Container | null = null; // UI layer - always on top, unaffected by camera
 
   // Sprite pools
   private tilePool: TileSpritePool = new TileSpritePool();
@@ -51,6 +55,11 @@ export class PixiRenderer implements Renderer {
 
   // Cached text objects
   private textCache: Map<string, Text> = new Map();
+  private bitmapTextCache: Map<string, BitmapText> = new Map();
+
+  // Bitmap font settings
+  private bitmapFontLoaded = false;
+  private bitmapFontName = 'PixelFont';
 
   // Current viewport for culling
   private viewportBounds: ViewportBounds = { minX: -Infinity, maxX: Infinity, minY: -Infinity, maxY: Infinity };
@@ -66,6 +75,14 @@ export class PixiRenderer implements Renderer {
 
   // Ready state
   private ready = false;
+
+  // Glow filter for active file highlighting (shared instance)
+  private activeGlowFilter: GlowFilter | null = null;
+
+  // Day/night cycle
+  private lightingOverlay: Graphics | null = null;
+  private dayNightEnabled = true;
+  private lastLightingUpdate = 0;
 
   // Track if tiles need rebuild
   private tilesDirty = true;
@@ -126,6 +143,24 @@ export class PixiRenderer implements Renderer {
       // Create single overlay graphics (reused each frame)
       this.overlayGraphics = new Graphics();
       this.worldContainer.addChild(this.overlayGraphics);
+
+      // Create UI container - added to stage (not worldContainer) so it's
+      // always on top and unaffected by camera transforms
+      this.uiContainer = new Container();
+      stage.addChild(this.uiContainer);
+
+      // Create shared glow filter for active file highlighting
+      this.activeGlowFilter = new GlowFilter({
+        distance: 4,
+        color: 0xffec27,
+        quality: 0.5,
+        outerStrength: 2,
+        innerStrength: 0,
+      });
+
+      // Create lighting overlay for day/night cycle
+      this.lightingOverlay = new Graphics();
+      this.worldContainer.addChild(this.lightingOverlay);
 
       this.ready = true;
       console.log('[PixiRenderer] Initialized successfully with sprite pooling');
@@ -354,7 +389,7 @@ export class PixiRenderer implements Renderer {
         this.createAnimatedWaterTile(key, tile.spriteId, x, y, tile);
       } else {
         // Static tile
-        this.tilePool.setTile(key, tile.spriteId, x, y);
+        this.tilePool.setTile(key, tile.spriteId, x, y, TILE_SIZE);
       }
     }
 
@@ -418,7 +453,7 @@ export class PixiRenderer implements Renderer {
 
     if (textures.length < 2) {
       // Not enough frames, use static
-      this.tilePool.setTile(key, spriteId, x, y);
+      this.tilePool.setTile(key, spriteId, x, y, TILE_SIZE);
       return;
     }
 
@@ -459,7 +494,7 @@ export class PixiRenderer implements Renderer {
     const x = tile.x * TILE_SIZE;
     const y = tile.y * TILE_SIZE;
 
-    this.tilePool.setTile(key, tile.spriteId, x, y);
+    this.tilePool.setTile(key, tile.spriteId, x, y, TILE_SIZE);
   }
 
   /**
@@ -475,7 +510,7 @@ export class PixiRenderer implements Renderer {
    */
   setViewportBounds(bounds: ViewportBounds): void {
     this.viewportBounds = bounds;
-    this.tilePool.cullTiles(bounds, TILE_SIZE);
+    // Culling is now handled automatically by PixiJS via sprite.cullable = true
   }
 
   /**
@@ -536,7 +571,7 @@ export class PixiRenderer implements Renderer {
     if (!texture) return false;
 
     const key = `${Math.floor(x / TILE_SIZE)},${Math.floor(y / TILE_SIZE)},${layer}`;
-    this.tilePool.setTile(key, id, x, y);
+    this.tilePool.setTile(key, id, x, y, TILE_SIZE);
     return true;
   }
 
@@ -548,28 +583,116 @@ export class PixiRenderer implements Renderer {
     this.overlayGraphics.fill({ color: colorNum, alpha });
   }
 
+  /**
+   * Draw a glow effect around a rectangle (for active file highlighting)
+   * Uses multiple layered rects with decreasing alpha for glow effect
+   */
+  drawGlowRect(x: number, y: number, w: number, h: number, color: string = '#ffec27'): void {
+    if (!this.overlayGraphics) return;
+
+    const colorNum = this.parseColor(color);
+
+    // Draw multiple rects with decreasing alpha for glow effect
+    const glowLayers = [
+      { offset: 4, alpha: 0.1 },
+      { offset: 3, alpha: 0.15 },
+      { offset: 2, alpha: 0.2 },
+      { offset: 1, alpha: 0.3 },
+    ];
+
+    for (const layer of glowLayers) {
+      this.overlayGraphics.rect(
+        x - layer.offset,
+        y - layer.offset,
+        w + layer.offset * 2,
+        h + layer.offset * 2
+      );
+      this.overlayGraphics.fill({ color: colorNum, alpha: layer.alpha });
+    }
+  }
+
   drawText(text: string, x: number, y: number, color: string, fontSize: number = 7): void {
     if (!this.effectsContainer) return;
 
-    // Use cached text object if available
-    const cacheKey = `${text}-${color}-${fontSize}`;
-    let textObj = this.textCache.get(cacheKey);
+    // Use BitmapText if font is loaded, otherwise fall back to Text
+    if (this.bitmapFontLoaded) {
+      const cacheKey = `bmp-${text}-${fontSize}`;
+      let bitmapText = this.bitmapTextCache.get(cacheKey);
 
-    if (!textObj) {
+      if (!bitmapText) {
+        bitmapText = new BitmapText({
+          text,
+          style: {
+            fontName: this.bitmapFontName,
+            fontSize,
+          },
+        });
+        this.bitmapTextCache.set(cacheKey, bitmapText);
+      }
+
+      bitmapText.x = x;
+      bitmapText.y = y;
+      // Apply color tint
       const colorNum = this.parseColor(color);
-      const textStyle = new TextStyle({
-        fontFamily: 'monospace',
-        fontSize,
-        fill: colorNum,
-      });
-      textObj = new Text({ text, style: textStyle });
-      this.textCache.set(cacheKey, textObj);
-    }
+      bitmapText.tint = colorNum;
+      this.effectsContainer.addChild(bitmapText);
+    } else {
+      // Fallback to cached Text objects
+      const cacheKey = `${text}-${color}-${fontSize}`;
+      let textObj = this.textCache.get(cacheKey);
 
-    // Clone position for this frame
-    textObj.x = x;
-    textObj.y = y;
-    this.effectsContainer.addChild(textObj);
+      if (!textObj) {
+        const colorNum = this.parseColor(color);
+        const textStyle = new TextStyle({
+          fontFamily: 'monospace',
+          fontSize,
+          fill: colorNum,
+        });
+        textObj = new Text({ text, style: textStyle });
+        this.textCache.set(cacheKey, textObj);
+      }
+
+      textObj.x = x;
+      textObj.y = y;
+      this.effectsContainer.addChild(textObj);
+    }
+  }
+
+  /**
+   * Load a bitmap font for use with BitmapText
+   * Call this during initialization if a font is available
+   */
+  async loadBitmapFont(fontUrl: string, fontName: string = 'PixelFont'): Promise<boolean> {
+    try {
+      await Assets.load(fontUrl);
+      this.bitmapFontName = fontName;
+      this.bitmapFontLoaded = true;
+      console.log(`[PixiRenderer] Loaded bitmap font: ${fontName}`);
+      return true;
+    } catch (error) {
+      console.warn(`[PixiRenderer] Failed to load bitmap font: ${error}`);
+      return false;
+    }
+  }
+
+  /**
+   * Draw weather particles (rain/snow)
+   */
+  drawWeatherParticles(particles: { x: number; y: number; type: 'rain' | 'snow'; size: number; alpha: number }[]): void {
+    if (!this.overlayGraphics) return;
+
+    for (const p of particles) {
+      if (p.type === 'rain') {
+        // Rain is a short vertical line
+        this.overlayGraphics.moveTo(p.x, p.y);
+        this.overlayGraphics.lineTo(p.x, p.y + p.size * 4);
+        this.overlayGraphics.stroke({ color: 0x8899bb, alpha: p.alpha, width: 1 });
+      } else {
+        // Snow is a small circle
+        this.overlayGraphics.circle(p.x, p.y, p.size);
+        this.overlayGraphics.fill({ color: 0xffffff, alpha: p.alpha });
+      }
+    }
   }
 
   setTransform(panX: number, panY: number, zoom: number): void {
@@ -611,8 +734,7 @@ export class PixiRenderer implements Renderer {
       maxY: Math.ceil(bottom) + 1,
     };
 
-    // Apply culling
-    this.tilePool.cullTiles(this.viewportBounds, TILE_SIZE);
+    // Culling is now handled automatically by PixiJS via sprite.cullable = true
   }
 
   resize(width: number, height: number): void {
@@ -620,6 +742,87 @@ export class PixiRenderer implements Renderer {
       this.app.renderer.resize(width, height);
       this.updateViewportBounds();
     }
+  }
+
+  // ─── Day/Night Cycle ─────────────────────────────────────────────────────
+
+  /**
+   * Update lighting overlay based on current time
+   * Creates a smooth day/night transition
+   */
+  updateDayNightCycle(worldWidth: number, worldHeight: number, force: boolean = false): void {
+    if (!this.lightingOverlay || !this.dayNightEnabled) return;
+
+    const now = Date.now();
+    // Only update every 5 seconds unless forced
+    if (!force && now - this.lastLightingUpdate < 5000) return;
+    this.lastLightingUpdate = now;
+
+    const hour = new Date().getHours();
+    const minute = new Date().getMinutes();
+    const timeOfDay = hour + minute / 60;
+
+    // Calculate lighting alpha based on time
+    // Night: 0-6 and 20-24, Day: 6-20
+    let alpha = 0;
+    let color = 0x000033; // Dark blue for night
+
+    if (timeOfDay < 5) {
+      // Deep night (0:00 - 5:00)
+      alpha = 0.4;
+    } else if (timeOfDay < 7) {
+      // Dawn transition (5:00 - 7:00)
+      const t = (timeOfDay - 5) / 2;
+      alpha = 0.4 * (1 - t);
+      // Warm orange tint during dawn
+      color = this.lerpColor(0x000033, 0x331100, t);
+    } else if (timeOfDay < 18) {
+      // Day (7:00 - 18:00)
+      alpha = 0;
+    } else if (timeOfDay < 20) {
+      // Dusk transition (18:00 - 20:00)
+      const t = (timeOfDay - 18) / 2;
+      alpha = 0.4 * t;
+      // Warm orange tint during dusk
+      color = this.lerpColor(0x331100, 0x000033, t);
+    } else {
+      // Night (20:00 - 24:00)
+      alpha = 0.4;
+    }
+
+    // Clear and redraw the overlay
+    this.lightingOverlay.clear();
+    this.lightingOverlay.rect(0, 0, worldWidth * TILE_SIZE, worldHeight * TILE_SIZE);
+    this.lightingOverlay.fill({ color, alpha });
+  }
+
+  /**
+   * Enable or disable day/night cycle
+   */
+  setDayNightEnabled(enabled: boolean): void {
+    this.dayNightEnabled = enabled;
+    if (!enabled && this.lightingOverlay) {
+      this.lightingOverlay.clear();
+    }
+  }
+
+  /**
+   * Linear interpolation between two colors
+   */
+  private lerpColor(color1: number, color2: number, t: number): number {
+    const r1 = (color1 >> 16) & 0xff;
+    const g1 = (color1 >> 8) & 0xff;
+    const b1 = color1 & 0xff;
+
+    const r2 = (color2 >> 16) & 0xff;
+    const g2 = (color2 >> 8) & 0xff;
+    const b2 = color2 & 0xff;
+
+    const r = Math.round(r1 + (r2 - r1) * t);
+    const g = Math.round(g1 + (g2 - g1) * t);
+    const b = Math.round(b1 + (b2 - b1) * t);
+
+    return (r << 16) | (g << 8) | b;
   }
 
   dispose(): void {
@@ -654,6 +857,12 @@ export class PixiRenderer implements Renderer {
     }
     this.textCache.clear();
 
+    // Clean up bitmap text cache
+    for (const bitmapText of this.bitmapTextCache.values()) {
+      bitmapText.destroy(true);
+    }
+    this.bitmapTextCache.clear();
+
     // Destroy application with children
     if (this.app) {
       this.app.destroy(true, { children: true, texture: true, textureSource: true });
@@ -667,7 +876,9 @@ export class PixiRenderer implements Renderer {
     this.cropsContainer = null;
     this.charactersContainer = null;
     this.effectsContainer = null;
+    this.uiContainer = null;
     this.overlayGraphics = null;
+    this.lightingOverlay = null;
     this.canvas = null;
     this.ready = false;
     this.useTickerRendering = false;
@@ -724,6 +935,22 @@ export class PixiRenderer implements Renderer {
    */
   getWorldContainer(): Container | null {
     return this.worldContainer;
+  }
+
+  /**
+   * Get the UI container for overlay elements (health bars, tooltips, etc.)
+   * UI elements added here are not affected by camera transforms
+   */
+  getUIContainer(): Container | null {
+    return this.uiContainer;
+  }
+
+  /**
+   * Get the shared glow filter for active file highlighting
+   * Can be applied to sprites: sprite.filters = [renderer.getGlowFilter()]
+   */
+  getGlowFilter(): GlowFilter | null {
+    return this.activeGlowFilter;
   }
 
   /**

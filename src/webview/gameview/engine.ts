@@ -17,6 +17,12 @@ import {
   WanderState,
   TILE_SIZE,
   Direction,
+  ANIMAL_BEHAVIORS,
+  AnimalBehaviorConfig,
+  TileType,
+  WeatherState,
+  WeatherParticle,
+  WeatherType,
 } from './types';
 import { SpatialHash } from './SpatialHash';
 
@@ -87,6 +93,15 @@ export class GameEngine {
 
   // Manifest data for animations
   manifest: { animations?: Record<string, { frames: string[]; fps: number; loop: boolean }> } | null = null;
+
+  // Weather system
+  weather: WeatherState = {
+    current: 'clear',
+    particles: [],
+    intensity: 0.5,
+    windDirection: 0,
+    enabled: true,
+  };
 
   constructor() {
     this.state = this.createInitialState();
@@ -189,11 +204,12 @@ export class GameEngine {
     if (startKey === endKey) return [];
     if (!this.walkableTiles.has(endKey)) return null;
 
-    const open: Array<{ x: number; y: number; g: number; h: number; f: number; parent: { x: number; y: number } | null }> = [
-      { x: sx, y: sy, g: 0, h: 0, f: 0, parent: null }
+    const open: Array<{ x: number; y: number; g: number; h: number; f: number }> = [
+      { x: sx, y: sy, g: 0, h: 0, f: 0 }
     ];
     const closed = new Set<string>();
     const gScores = new Map<string, number>();
+    const cameFrom = new Map<string, { x: number; y: number }>();
     gScores.set(startKey, 0);
     let iterations = 0;
 
@@ -207,26 +223,18 @@ export class GameEngine {
       const key = `${current.x},${current.y}`;
 
       if (key === endKey) {
+        // Reconstruct path by walking parent chain
         const path: { x: number; y: number }[] = [];
-        let node: { x: number; y: number; parent: { x: number; y: number } | null } | null = current;
-        while (node && node.parent) {
-          path.push({ x: node.x, y: node.y });
-          node = open.find(n => n.x === node!.parent!.x && n.y === node!.parent!.y) || null;
-          // Reconstruct from closed set
-          if (!node) {
-            // We need to reconstruct the path properly - for now use simple approach
-          }
+        let curr: { x: number; y: number } | null = { x: current.x, y: current.y };
+
+        while (curr) {
+          path.unshift(curr);
+          const currKey = `${curr.x},${curr.y}`;
+          curr = cameFrom.get(currKey) || null;
         }
-        // Simple reconstruction
-        const result: { x: number; y: number }[] = [];
-        let curr: typeof current | null = current;
-        while (curr && curr.parent) {
-          result.unshift({ x: curr.x, y: curr.y });
-          // Find parent in closed
-          const parentKey = `${curr.parent.x},${curr.parent.y}`;
-          curr = null; // For now, simplified
-        }
-        return result;
+
+        // Remove start position, return rest
+        return path.slice(1);
       }
 
       closed.add(key);
@@ -239,8 +247,11 @@ export class GameEngine {
         const g = current.g + 1;
         if (gScores.has(nKey) && g >= gScores.get(nKey)!) continue;
         gScores.set(nKey, g);
+        // Store parent reference for path reconstruction
+        cameFrom.set(nKey, { x: current.x, y: current.y });
+
         const h = Math.abs(nx - ex) + Math.abs(ny - ey);
-        open.push({ x: nx, y: ny, g, h, f: g + h, parent: { x: current.x, y: current.y } });
+        open.push({ x: nx, y: ny, g, h, f: g + h });
       }
     }
     return null;
@@ -421,6 +432,9 @@ export class GameEngine {
     for (const sa of this.state.subagents) {
       if (!sa.path) sa.path = [];
 
+      // Get behavior config for this animal type
+      const behavior = ANIMAL_BEHAVIORS[sa.type] || ANIMAL_BEHAVIORS.chicken;
+
       if (animFrame % 20 === 0) {
         sa.frameIndex = (sa.frameIndex + 1) % 4;
       }
@@ -441,16 +455,25 @@ export class GameEngine {
               sa.targetY = sa.path[0].y;
             } else {
               sa.isMoving = false;
-              sa.pauseUntil = now + 2000 + Math.random() * 3000;
+              const pauseDuration = behavior.pauseMin + Math.random() * (behavior.pauseMax - behavior.pauseMin);
+              sa.pauseUntil = now + pauseDuration;
             }
           } else {
             sa.isMoving = false;
-            sa.pauseUntil = now + 2000 + Math.random() * 3000;
+            const pauseDuration = behavior.pauseMin + Math.random() * (behavior.pauseMax - behavior.pauseMin);
+            sa.pauseUntil = now + pauseDuration;
           }
         } else {
-          const speed = 0.04;
-          sa.x += dx * speed;
-          sa.y += dy * speed;
+          // Use behavior-specific speed
+          const speed = 0.04 * behavior.speed;
+          sa.x += (dx / dist) * speed;
+          sa.y += (dy / dist) * speed;
+
+          // Random direction change for wanderers (chickens)
+          if (behavior.directionChangeChance > 0 && Math.random() < behavior.directionChangeChance * 0.1) {
+            // Occasionally pick a new random target
+            continue;
+          }
 
           if (Math.abs(dx) > Math.abs(dy)) {
             sa.direction = dx > 0 ? 'right' : 'left';
@@ -461,16 +484,9 @@ export class GameEngine {
       } else if (now >= sa.pauseUntil) {
         const tileX = Math.floor(sa.x / TILE_SIZE);
         const tileY = Math.floor(sa.y / TILE_SIZE);
-        const candidates: { tx: number; ty: number }[] = [];
 
-        for (let dx = -5; dx <= 5; dx++) {
-          for (let dy = -5; dy <= 5; dy++) {
-            if (dx === 0 && dy === 0) continue;
-            if (this.walkableTiles.has(`${tileX + dx},${tileY + dy}`)) {
-              candidates.push({ tx: tileX + dx, ty: tileY + dy });
-            }
-          }
-        }
+        // Find candidate tiles based on behavior
+        const candidates = this.findBehaviorTargetTiles(tileX, tileY, behavior);
 
         for (let attempt = 0; attempt < 3 && candidates.length > 0; attempt++) {
           const idx = Math.floor(Math.random() * candidates.length);
@@ -486,6 +502,61 @@ export class GameEngine {
           candidates.splice(idx, 1);
         }
       }
+    }
+  }
+
+  /**
+   * Find candidate tiles based on animal behavior preferences
+   */
+  private findBehaviorTargetTiles(tileX: number, tileY: number, behavior: AnimalBehaviorConfig): { tx: number; ty: number }[] {
+    const candidates: { tx: number; ty: number; priority: number }[] = [];
+    const radius = behavior.wanderRadius;
+
+    for (let dx = -radius; dx <= radius; dx++) {
+      for (let dy = -radius; dy <= radius; dy++) {
+        if (dx === 0 && dy === 0) continue;
+        const tx = tileX + dx;
+        const ty = tileY + dy;
+        const key = `${tx},${ty}`;
+
+        if (!this.walkableTiles.has(key)) continue;
+
+        let priority = 1;
+
+        // Check if this tile matches preferred tiles
+        if (behavior.preferredTiles && behavior.preferredTiles.length > 0) {
+          const tile = this.state.tiles.find(t => t.x === tx && t.y === ty && t.layer === 0);
+          if (tile && behavior.preferredTiles.includes(tile.type)) {
+            priority = 3; // Higher priority for preferred tiles
+          }
+        }
+
+        candidates.push({ tx, ty, priority });
+      }
+    }
+
+    // Sort by priority (higher first) and shuffle within same priority
+    candidates.sort((a, b) => b.priority - a.priority);
+
+    // Return top candidates with some randomization
+    const highPriority = candidates.filter(c => c.priority > 1);
+    const normalPriority = candidates.filter(c => c.priority === 1);
+
+    // Shuffle both arrays
+    this.shuffleArray(highPriority);
+    this.shuffleArray(normalPriority);
+
+    // Prefer high priority tiles (70% chance to pick from high priority if available)
+    if (highPriority.length > 0 && (normalPriority.length === 0 || Math.random() < 0.7)) {
+      return highPriority;
+    }
+    return normalPriority;
+  }
+
+  private shuffleArray<T>(array: T[]): void {
+    for (let i = array.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [array[i], array[j]] = [array[j], array[i]];
     }
   }
 
@@ -533,6 +604,60 @@ export class GameEngine {
       }
       p.x += p.vx;
       p.y += p.vy;
+    }
+  }
+
+  // ─── Weather System ────────────────────────────────────────────────────────
+
+  setWeather(type: WeatherType, intensity: number = 0.5): void {
+    this.weather.current = type;
+    this.weather.intensity = Math.max(0, Math.min(1, intensity));
+    this.weather.particles = []; // Clear existing particles
+  }
+
+  updateWeather(deltaTime: number, worldWidth: number, worldHeight: number): void {
+    if (!this.weather.enabled || this.weather.current === 'clear') {
+      this.weather.particles = [];
+      return;
+    }
+
+    const maxParticles = Math.floor(100 * this.weather.intensity);
+    const pixelW = worldWidth * TILE_SIZE;
+    const pixelH = worldHeight * TILE_SIZE;
+
+    // Spawn new particles
+    while (this.weather.particles.length < maxParticles) {
+      const isRain = this.weather.current === 'rain' || this.weather.current === 'storm';
+      const isSnow = this.weather.current === 'snow';
+
+      this.weather.particles.push({
+        x: Math.random() * pixelW,
+        y: -10,
+        speed: isRain ? 3 + Math.random() * 2 : isSnow ? 0.5 + Math.random() * 0.5 : 1,
+        type: isRain ? 'rain' : 'snow',
+        size: isRain ? 1 : 2 + Math.random() * 2,
+        alpha: 0.3 + Math.random() * 0.4,
+        drift: isSnow ? (Math.random() - 0.5) * 0.5 : 0,
+      });
+    }
+
+    // Update existing particles
+    for (let i = this.weather.particles.length - 1; i >= 0; i--) {
+      const p = this.weather.particles[i];
+
+      // Move particle
+      p.y += p.speed;
+      p.x += this.weather.windDirection * 0.5 + (p.drift || 0);
+
+      // Snow drifts side to side
+      if (p.type === 'snow') {
+        p.x += Math.sin(p.y * 0.05) * 0.3;
+      }
+
+      // Remove particles that are off screen
+      if (p.y > pixelH || p.x < -10 || p.x > pixelW + 10) {
+        this.weather.particles.splice(i, 1);
+      }
     }
   }
 
@@ -613,13 +738,18 @@ export class GameEngine {
 
   // ─── Main Update ──────────────────────────────────────────────────────────
 
-  update(deltaTime: number, now: number, animFrame: number): void {
+  update(deltaTime: number, now: number, animFrame: number, worldWidth?: number, worldHeight?: number): void {
     this.updateAgentPosition(deltaTime);
     this.updateWander(now);
     this.updateSubagents(now, animFrame);
     this.updateParticles(now);
     this.updateAnimations(deltaTime);
     this.updateGrowthEffects(now);
+
+    // Update weather if world dimensions are provided
+    if (worldWidth !== undefined && worldHeight !== undefined) {
+      this.updateWeather(deltaTime, worldWidth, worldHeight);
+    }
   }
 
   // ─── State Updates ────────────────────────────────────────────────────────
