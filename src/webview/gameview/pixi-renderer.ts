@@ -166,10 +166,7 @@ export class PixiRenderer implements Renderer {
         innerStrength: 0,
       });
 
-      // Create normal map filter for dynamic lighting
-      this.normalMapFilter = new NormalMapFilter();
-
-      // Create lighting manager
+      // Create lighting manager ( lightweight, no GL resources )
       this.lightingManager = new LightingManager({
         enabled: this.normalMapEnabled,
         dayNightCycle: true,
@@ -178,6 +175,8 @@ export class PixiRenderer implements Renderer {
         agentLightIntensity: 0.8,
         agentLightColor: 0xffaa44,
       });
+
+      // Note: NormalMapFilter is created lazily when normal maps are loaded
 
       // Create lighting overlay for day/night cycle
       this.lightingOverlay = new Graphics();
@@ -372,10 +371,21 @@ export class PixiRenderer implements Renderer {
     console.log('[PixiRenderer] Total textures loaded:', this.textures.size, 'normal maps:', this.normalMapTextures.size);
 
     // Apply normal map filter to world container if we have normal maps
-    if (this.normalMapTextures.size > 0 && this.normalMapFilter && this.worldContainer) {
+    if (this.normalMapTextures.size > 0 && this.worldContainer) {
+      // Lazily create the filter now that we have normal maps
+      if (!this.normalMapFilter) {
+        try {
+          this.normalMapFilter = new NormalMapFilter();
+          console.log('[PixiRenderer] NormalMapFilter created');
+        } catch (error) {
+          console.warn('[PixiRenderer] Failed to create NormalMapFilter:', error);
+          return;
+        }
+      }
+
       // Set the first normal map as default (we'll use a different approach for multi-sheet)
       const firstNormalMap = this.normalMapTextures.values().next().value;
-      if (firstNormalMap) {
+      if (firstNormalMap && this.normalMapFilter) {
         this.normalMapFilter.setNormalMap(firstNormalMap);
       }
 

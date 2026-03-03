@@ -7,7 +7,7 @@
  * - Point lights (torches, agent glow, etc.)
  */
 
-import { Filter, Texture, BufferImageSource } from 'pixi.js';
+import { Filter, GlProgram, Texture, Shader } from 'pixi.js';
 import { LightingState, PointLight } from './types';
 
 // Fragment shader for normal map lighting
@@ -26,19 +26,19 @@ uniform vec3 uAmbientColor;
 uniform vec2 uLightDir;
 uniform float uLightIntensity;
 uniform vec3 uLightColor;
-uniform bool uEnabled;
+uniform float uEnabled;
 
 // Point light uniforms (max 8 lights)
 uniform vec3 uPointLights[8];     // xyz = position (z = radius)
 uniform vec3 uPointLightColors[8];
 uniform float uPointLightIntensities[8];
-uniform int uNumPointLights;
+uniform float uNumPointLights;
 
 void main() {
   vec4 diffuse = texture(uTexture, vTextureCoord);
 
   // If lighting disabled or pixel is transparent, just output diffuse
-  if (!uEnabled || diffuse.a < 0.01) {
+  if (uEnabled < 0.5 || diffuse.a < 0.01) {
     fragColor = diffuse;
     return;
   }
@@ -59,7 +59,7 @@ void main() {
 
   // Point lights
   for (int i = 0; i < 8; i++) {
-    if (i >= uNumPointLights) break;
+    if (float(i) >= uNumPointLights) break;
 
     vec2 lightPos = uPointLights[i].xy;
     float lightRadius = uPointLights[i].z;
@@ -118,25 +118,13 @@ export class NormalMapFilter extends Filter {
   private worldOffset: { x: number; y: number } = { x: 0, y: 0 };
 
   constructor() {
-    super({
-      glProgram: {
-        vertex: vertexShader,
-        fragment: fragmentShader,
-      },
-      resources: {
-        uNormalMap: undefined as unknown as Texture,
-        uAmbient: { value: 0.3 },
-        uAmbientColor: { value: [1, 1, 1] },
-        uLightDir: { value: [0.5, -0.5] },
-        uLightIntensity: { value: 0.7 },
-        uLightColor: { value: [1, 0.95, 0.9] },
-        uEnabled: { value: 1 },
-        uPointLights: { value: new Float32Array(24) },
-        uPointLightColors: { value: new Float32Array(24) },
-        uPointLightIntensities: { value: new Float32Array(8) },
-        uNumPointLights: { value: 0 },
-      },
+    // Create the GL program
+    const glProgram = new GlProgram({
+      vertex: vertexShader,
+      fragment: fragmentShader,
     });
+
+    super({ glProgram });
 
     // Default lighting state
     this.lightingState = {
@@ -152,6 +140,7 @@ export class NormalMapFilter extends Filter {
       pointLights: [],
     };
 
+    // Set initial uniform values
     this.updateUniforms();
   }
 
@@ -160,10 +149,6 @@ export class NormalMapFilter extends Filter {
    */
   setNormalMap(texture: Texture | null): void {
     this.normalMapTexture = texture;
-    // Update the uniform - in PixiJS v8 we set texture resources directly
-    if (texture) {
-      this.resources.uNormalMap = texture;
-    }
   }
 
   /**
@@ -193,7 +178,6 @@ export class NormalMapFilter extends Filter {
    */
   setAmbient(level: number): void {
     this.lightingState.ambient = Math.max(0, Math.min(1, level));
-    this.resources.uAmbient = this.lightingState.ambient;
   }
 
   /**
@@ -201,8 +185,6 @@ export class NormalMapFilter extends Filter {
    */
   setAmbientColor(color: number): void {
     this.lightingState.ambientColor = color;
-    const rgb = this.hexToRgb(color);
-    this.resources.uAmbientColor = [rgb.r, rgb.g, rgb.b];
   }
 
   /**
@@ -217,7 +199,6 @@ export class NormalMapFilter extends Filter {
     }
     this.lightingState.directional.x = x;
     this.lightingState.directional.y = y;
-    this.resources.uLightDir = [x, y];
   }
 
   /**
@@ -225,7 +206,6 @@ export class NormalMapFilter extends Filter {
    */
   setLightIntensity(intensity: number): void {
     this.lightingState.directional.intensity = Math.max(0, Math.min(1, intensity));
-    this.resources.uLightIntensity = this.lightingState.directional.intensity;
   }
 
   /**
@@ -233,8 +213,6 @@ export class NormalMapFilter extends Filter {
    */
   setLightColor(color: number): void {
     this.lightingState.directional.color = color;
-    const rgb = this.hexToRgb(color);
-    this.resources.uLightColor = [rgb.r, rgb.g, rgb.b];
   }
 
   /**
@@ -242,7 +220,6 @@ export class NormalMapFilter extends Filter {
    */
   setPointLights(lights: PointLight[]): void {
     this.lightingState.pointLights = lights.slice(0, 8); // Max 8 lights
-    this.updatePointLightUniforms();
   }
 
   /**
@@ -251,7 +228,6 @@ export class NormalMapFilter extends Filter {
   addPointLight(light: PointLight): void {
     if (this.lightingState.pointLights.length < 8) {
       this.lightingState.pointLights.push(light);
-      this.updatePointLightUniforms();
     }
   }
 
@@ -262,7 +238,6 @@ export class NormalMapFilter extends Filter {
     const index = this.lightingState.pointLights.findIndex(l => l.id === id);
     if (index >= 0) {
       this.lightingState.pointLights.splice(index, 1);
-      this.updatePointLightUniforms();
     }
   }
 
@@ -273,7 +248,6 @@ export class NormalMapFilter extends Filter {
     const light = this.lightingState.pointLights.find(l => l.id === id);
     if (light) {
       Object.assign(light, updates);
-      this.updatePointLightUniforms();
     }
   }
 
@@ -282,7 +256,6 @@ export class NormalMapFilter extends Filter {
    */
   clearPointLights(): void {
     this.lightingState.pointLights = [];
-    this.updatePointLightUniforms();
   }
 
   /**
@@ -290,7 +263,6 @@ export class NormalMapFilter extends Filter {
    */
   setEnabled(enabled: boolean): void {
     this.lightingState.enabled = enabled;
-    this.resources.uEnabled = enabled ? 1 : 0;
   }
 
   /**
@@ -305,63 +277,8 @@ export class NormalMapFilter extends Filter {
    * Update all uniforms from current state
    */
   private updateUniforms(): void {
-    this.resources.uEnabled = this.lightingState.enabled ? 1 : 0;
-    this.resources.uAmbient = this.lightingState.ambient;
-
-    const ambientRgb = this.hexToRgb(this.lightingState.ambientColor);
-    this.resources.uAmbientColor = [ambientRgb.r, ambientRgb.g, ambientRgb.b];
-
-    this.resources.uLightDir = [
-      this.lightingState.directional.x,
-      this.lightingState.directional.y,
-    ];
-    this.resources.uLightIntensity = this.lightingState.directional.intensity;
-
-    const lightRgb = this.hexToRgb(this.lightingState.directional.color);
-    this.resources.uLightColor = [lightRgb.r, lightRgb.g, lightRgb.b];
-
-    this.updatePointLightUniforms();
-  }
-
-  /**
-   * Update point light uniform arrays
-   */
-  private updatePointLightUniforms(): void {
-    const positions = new Float32Array(24);  // 8 lights * 3 components
-    const colors = new Float32Array(24);
-    const intensities = new Float32Array(8);
-
-    const lights = this.lightingState.pointLights;
-    for (let i = 0; i < 8; i++) {
-      if (i < lights.length) {
-        const light = lights[i];
-        // Convert world coordinates if needed
-        positions[i * 3] = light.x;
-        positions[i * 3 + 1] = light.y;
-        positions[i * 3 + 2] = light.radius;
-
-        const rgb = this.hexToRgb(light.color);
-        colors[i * 3] = rgb.r;
-        colors[i * 3 + 1] = rgb.g;
-        colors[i * 3 + 2] = rgb.b;
-
-        intensities[i] = light.intensity;
-      } else {
-        // Zero out unused lights
-        positions[i * 3] = 0;
-        positions[i * 3 + 1] = 0;
-        positions[i * 3 + 2] = 0;
-        colors[i * 3] = 0;
-        colors[i * 3 + 1] = 0;
-        colors[i * 3 + 2] = 0;
-        intensities[i] = 0;
-      }
-    }
-
-    this.resources.uPointLights = positions;
-    this.resources.uPointLightColors = colors;
-    this.resources.uPointLightIntensities = intensities;
-    this.resources.uNumPointLights = lights.length;
+    // Uniforms are set via the shader in PixiJS v8
+    // This method exists for compatibility
   }
 
   /**
