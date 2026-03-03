@@ -5,26 +5,88 @@
       "id": "mushroom-fairy-ring",
       "name": "Mushroom Fairy Ring",
       "category": "decorative",
-      "asciiMap": [
-        ".r.b.",
-        "b...r",
-        "..s..",
-        "r...b",
-        ".b.r."
+      "width": 5,
+      "height": 5,
+      "tiles": [
+        {
+          "x": 1,
+          "y": 0,
+          "layer": 2,
+          "type": "decoration",
+          "spriteId": "biome/mushroom-red"
+        },
+        {
+          "x": 3,
+          "y": 0,
+          "layer": 2,
+          "type": "decoration",
+          "spriteId": "biome/mushroom-brown"
+        },
+        {
+          "x": 0,
+          "y": 1,
+          "layer": 2,
+          "type": "decoration",
+          "spriteId": "biome/mushroom-brown"
+        },
+        {
+          "x": 4,
+          "y": 1,
+          "layer": 2,
+          "type": "decoration",
+          "spriteId": "biome/mushroom-red"
+        },
+        {
+          "x": 2,
+          "y": 2,
+          "layer": 2,
+          "type": "decoration",
+          "spriteId": "biome/rock-small"
+        },
+        {
+          "x": 0,
+          "y": 3,
+          "layer": 2,
+          "type": "decoration",
+          "spriteId": "biome/mushroom-red"
+        },
+        {
+          "x": 4,
+          "y": 3,
+          "layer": 2,
+          "type": "decoration",
+          "spriteId": "biome/mushroom-brown"
+        },
+        {
+          "x": 1,
+          "y": 4,
+          "layer": 2,
+          "type": "decoration",
+          "spriteId": "biome/mushroom-brown"
+        },
+        {
+          "x": 3,
+          "y": 4,
+          "layer": 2,
+          "type": "decoration",
+          "spriteId": "biome/mushroom-red"
+        }
       ],
-      "legend": {
-        "r": { "type": "decoration", "spriteId": "biome/mushroom-red", "layer": 2 },
-        "b": { "type": "decoration", "spriteId": "biome/mushroom-brown", "layer": 2 },
-        "s": { "type": "decoration", "spriteId": "biome/rock-small", "layer": 2 }
-      },
+      "connectionPoints": [],
       "placement": {
         "minDistFromPlots": 3,
         "minDistFromSame": 15,
         "minDistFromAny": 5,
         "affinity": "edge",
+        "allowOverlapWater": false,
+        "allowOverlapDecorations": true,
         "requiresGrass": true
       },
-      "tags": ["mushroom", "natural", "forest"],
+      "tags": [
+        "mushroom",
+        "natural",
+        "forest"
+      ],
       "rarity": 0.7,
       "minWorldArea": 400,
       "maxInstances": 2
@@ -33,25 +95,94 @@
       "id": "stone-circle",
       "name": "Stone Circle",
       "category": "decorative",
-      "asciiMap": [
-        ".L.L.",
-        "s...s",
-        ".s.s.",
-        "L...L",
-        ".s.s."
+      "width": 5,
+      "height": 5,
+      "tiles": [
+        {
+          "x": 1,
+          "y": 0,
+          "layer": 2,
+          "type": "decoration",
+          "spriteId": "biome/rock-large"
+        },
+        {
+          "x": 3,
+          "y": 0,
+          "layer": 2,
+          "type": "decoration",
+          "spriteId": "biome/rock-large"
+        },
+        {
+          "x": 0,
+          "y": 1,
+          "layer": 2,
+          "type": "decoration",
+          "spriteId": "biome/rock-small"
+        },
+        {
+          "x": 4,
+          "y": 1,
+          "layer": 2,
+          "type": "decoration",
+          "spriteId": "biome/rock-small"
+        },
+        {
+          "x": 1,
+          "y": 2,
+          "layer": 2,
+          "type": "decoration",
+          "spriteId": "biome/rock-small"
+        },
+        {
+          "x": 3,
+          "y": 2,
+          "layer": 2,
+          "type": "decoration",
+          "spriteId": "biome/rock-small"
+        },
+        {
+          "x": 0,
+          "y": 3,
+          "layer": 2,
+          "type": "decoration",
+          "spriteId": "biome/rock-large"
+        },
+        {
+          "x": 4,
+          "y": 3,
+          "layer": 2,
+          "type": "decoration",
+          "spriteId": "biome/rock-large"
+        },
+        {
+          "x": 1,
+          "y": 4,
+          "layer": 2,
+          "type": "decoration",
+          "spriteId": "biome/rock-small"
+        },
+        {
+          "x": 3,
+          "y": 4,
+          "layer": 2,
+          "type": "decoration",
+          "spriteId": "biome/rock-small"
+        }
       ],
-      "legend": {
-        "L": { "type": "decoration", "spriteId": "biome/rock-large", "layer": 2 },
-        "s": { "type": "decoration", "spriteId": "biome/rock-small", "layer": 2 }
-      },
+      "connectionPoints": [],
       "placement": {
         "minDistFromPlots": 4,
         "minDistFromSame": 20,
         "minDistFromAny": 5,
         "affinity": "between-plots",
+        "allowOverlapWater": false,
+        "allowOverlapDecorations": true,
         "requiresGrass": true
       },
-      "tags": ["stone", "natural"],
+      "tags": [
+        "stone",
+        "natural"
+      ],
       "rarity": 0.5,
       "minWorldArea": 600,
       "maxInstances": 1
@@ -60,44 +191,117 @@
       "id": "flower-garden-small",
       "name": "Small Flower Garden",
       "category": "decorative",
-      "layers": [
+      "width": 4,
+      "height": 4,
+      "tiles": [
         {
+          "x": 1,
+          "y": 1,
           "layer": 0,
-          "asciiMap": [
-            "....",
-            ".gg.",
-            ".gg.",
-            "...."
-          ],
-          "legend": {
-            "g": { "type": "grass", "spriteId": "grass/grass-var2" }
-          }
+          "type": "grass",
+          "spriteId": "grass/grass-var2"
         },
         {
+          "x": 2,
+          "y": 1,
+          "layer": 0,
+          "type": "grass",
+          "spriteId": "grass/grass-var2"
+        },
+        {
+          "x": 1,
+          "y": 2,
+          "layer": 0,
+          "type": "grass",
+          "spriteId": "grass/grass-var2"
+        },
+        {
+          "x": 2,
+          "y": 2,
+          "layer": 0,
+          "type": "grass",
+          "spriteId": "grass/grass-var2"
+        },
+        {
+          "x": 1,
+          "y": 0,
           "layer": 2,
-          "asciiMap": [
-            ".sf.",
-            "f..s",
-            "s..f",
-            ".fs."
-          ],
-          "legend": {
-            "f": { "type": "decoration", "spriteId": "biome/flower-small" },
-            "s": { "type": "decoration", "spriteId": "biome/sunflower" }
-          }
+          "type": "decoration",
+          "spriteId": "biome/sunflower"
+        },
+        {
+          "x": 2,
+          "y": 0,
+          "layer": 2,
+          "type": "decoration",
+          "spriteId": "biome/flower-small"
+        },
+        {
+          "x": 0,
+          "y": 1,
+          "layer": 2,
+          "type": "decoration",
+          "spriteId": "biome/flower-small"
+        },
+        {
+          "x": 3,
+          "y": 1,
+          "layer": 2,
+          "type": "decoration",
+          "spriteId": "biome/sunflower"
+        },
+        {
+          "x": 0,
+          "y": 2,
+          "layer": 2,
+          "type": "decoration",
+          "spriteId": "biome/sunflower"
+        },
+        {
+          "x": 3,
+          "y": 2,
+          "layer": 2,
+          "type": "decoration",
+          "spriteId": "biome/flower-small"
+        },
+        {
+          "x": 1,
+          "y": 3,
+          "layer": 2,
+          "type": "decoration",
+          "spriteId": "biome/flower-small"
+        },
+        {
+          "x": 2,
+          "y": 3,
+          "layer": 2,
+          "type": "decoration",
+          "spriteId": "biome/sunflower"
         }
       ],
       "connectionPoints": [
-        { "x": 1, "y": 3, "edge": "south", "type": "path", "required": false }
+        {
+          "x": 1,
+          "y": 3,
+          "edge": "south",
+          "type": "path",
+          "required": false
+        }
       ],
       "placement": {
         "minDistFromPlots": 2,
         "minDistFromSame": 12,
         "minDistFromAny": 4,
         "affinity": "near-path",
+        "allowOverlapWater": false,
+        "allowOverlapDecorations": true,
         "requiresGrass": true
       },
-      "tags": ["flower", "garden", "decorative"],
+      "tags": [
+        "flower",
+        "garden",
+        "decorative"
+      ],
       "rarity": 0.8,
       "minWorldArea": 300,
       "maxInstances": 3
@@ -106,38 +310,179 @@
       "id": "pond-lily-small",
       "name": "Small Lily Pond",
       "category": "environment",
-      "layers": [
+      "width": 6,
+      "height": 5,
+      "tiles": [
         {
+          "x": 2,
+          "y": 0,
           "layer": 0,
-          "asciiMap": [
-            "..ww..",
-            ".wwww.",
-            "wwwwww",
-            ".wwww.",
-            "..ww.."
-          ],
-          "legend": {
-            "w": { "type": "water", "spriteId": "water/water-0" }
-          }
+          "type": "water",
+          "spriteId": "water/water-0"
         },
         {
+          "x": 3,
+          "y": 0,
+          "layer": 0,
+          "type": "water",
+          "spriteId": "water/water-0"
+        },
+        {
+          "x": 1,
+          "y": 1,
+          "layer": 0,
+          "type": "water",
+          "spriteId": "water/water-0"
+        },
+        {
+          "x": 2,
+          "y": 1,
+          "layer": 0,
+          "type": "water",
+          "spriteId": "water/water-0"
+        },
+        {
+          "x": 3,
+          "y": 1,
+          "layer": 0,
+          "type": "water",
+          "spriteId": "water/water-0"
+        },
+        {
+          "x": 4,
+          "y": 1,
+          "layer": 0,
+          "type": "water",
+          "spriteId": "water/water-0"
+        },
+        {
+          "x": 0,
+          "y": 2,
+          "layer": 0,
+          "type": "water",
+          "spriteId": "water/water-0"
+        },
+        {
+          "x": 1,
+          "y": 2,
+          "layer": 0,
+          "type": "water",
+          "spriteId": "water/water-0"
+        },
+        {
+          "x": 2,
+          "y": 2,
+          "layer": 0,
+          "type": "water",
+          "spriteId": "water/water-0"
+        },
+        {
+          "x": 3,
+          "y": 2,
+          "layer": 0,
+          "type": "water",
+          "spriteId": "water/water-0"
+        },
+        {
+          "x": 4,
+          "y": 2,
+          "layer": 0,
+          "type": "water",
+          "spriteId": "water/water-0"
+        },
+        {
+          "x": 5,
+          "y": 2,
+          "layer": 0,
+          "type": "water",
+          "spriteId": "water/water-0"
+        },
+        {
+          "x": 1,
+          "y": 3,
+          "layer": 0,
+          "type": "water",
+          "spriteId": "water/water-0"
+        },
+        {
+          "x": 2,
+          "y": 3,
+          "layer": 0,
+          "type": "water",
+          "spriteId": "water/water-0"
+        },
+        {
+          "x": 3,
+          "y": 3,
+          "layer": 0,
+          "type": "water",
+          "spriteId": "water/water-0"
+        },
+        {
+          "x": 4,
+          "y": 3,
+          "layer": 0,
+          "type": "water",
+          "spriteId": "water/water-0"
+        },
+        {
+          "x": 2,
+          "y": 4,
+          "layer": 0,
+          "type": "water",
+          "spriteId": "water/water-0"
+        },
+        {
+          "x": 3,
+          "y": 4,
+          "layer": 0,
+          "type": "water",
+          "spriteId": "water/water-0"
+        },
+        {
+          "x": 2,
+          "y": 1,
           "layer": 2,
-          "asciiMap": [
-            "......",
-            "..f...",
-            ".s..f.",
-            "....s.",
-            "......"
-          ],
-          "legend": {
-            "f": { "type": "decoration", "spriteId": "biome/flower-small" },
-            "s": { "type": "decoration", "spriteId": "biome/rock-small" }
-          }
+          "type": "decoration",
+          "spriteId": "biome/flower-small"
+        },
+        {
+          "x": 1,
+          "y": 2,
+          "layer": 2,
+          "type": "decoration",
+          "spriteId": "biome/rock-small"
+        },
+        {
+          "x": 4,
+          "y": 2,
+          "layer": 2,
+          "type": "decoration",
+          "spriteId": "biome/flower-small"
+        },
+        {
+          "x": 4,
+          "y": 3,
+          "layer": 2,
+          "type": "decoration",
+          "spriteId": "biome/rock-small"
         }
       ],
       "connectionPoints": [
-        { "x": 3, "y": 4, "edge": "south", "type": "path", "required": false },
-        { "x": 0, "y": 2, "edge": "west", "type": "grass", "required": false }
+        {
+          "x": 3,
+          "y": 4,
+          "edge": "south",
+          "type": "path",
+          "required": false
+        },
+        {
+          "x": 0,
+          "y": 2,
+          "edge": "west",
+          "type": "grass",
+          "required": false
+        }
       ],
       "placement": {
         "minDistFromPlots": 4,
@@ -145,9 +490,14 @@
         "minDistFromAny": 6,
         "affinity": "any",
         "allowOverlapWater": true,
+        "allowOverlapDecorations": true,
         "requiresGrass": false
       },
-      "tags": ["water", "pond", "natural"],
+      "tags": [
+        "water",
+        "pond",
+        "natural"
+      ],
       "rarity": 0.6,
       "minWorldArea": 500,
       "maxInstances": 2
@@ -156,35 +506,248 @@
       "id": "berry-patch",
       "name": "Berry Patch",
       "category": "decorative",
-      "layers": [
+      "width": 4,
+      "height": 4,
+      "tiles": [
         {
+          "x": 0,
+          "y": 0,
           "layer": 2,
-          "asciiMap": [
-            "r.g.",
-            ".rg.",
-            "g.r.",
-            ".g.r"
-          ],
-          "legend": {
-            "r": { "type": "decoration", "spriteId": "biome/berry-red" },
-            "g": { "type": "decoration", "spriteId": "biome/berry-green" }
-          }
+          "type": "decoration",
+          "spriteId": "biome/berry-red"
+        },
+        {
+          "x": 2,
+          "y": 0,
+          "layer": 2,
+          "type": "decoration",
+          "spriteId": "biome/berry-green"
+        },
+        {
+          "x": 1,
+          "y": 1,
+          "layer": 2,
+          "type": "decoration",
+          "spriteId": "biome/berry-red"
+        },
+        {
+          "x": 2,
+          "y": 1,
+          "layer": 2,
+          "type": "decoration",
+          "spriteId": "biome/berry-green"
+        },
+        {
+          "x": 0,
+          "y": 2,
+          "layer": 2,
+          "type": "decoration",
+          "spriteId": "biome/berry-green"
+        },
+        {
+          "x": 2,
+          "y": 2,
+          "layer": 2,
+          "type": "decoration",
+          "spriteId": "biome/berry-red"
+        },
+        {
+          "x": 1,
+          "y": 3,
+          "layer": 2,
+          "type": "decoration",
+          "spriteId": "biome/berry-green"
+        },
+        {
+          "x": 3,
+          "y": 3,
+          "layer": 2,
+          "type": "decoration",
+          "spriteId": "biome/berry-red"
         }
       ],
       "connectionPoints": [
-        { "x": 0, "y": 3, "edge": "south", "type": "grass", "required": false }
+        {
+          "x": 0,
+          "y": 3,
+          "edge": "south",
+          "type": "grass",
+          "required": false
+        }
       ],
       "placement": {
         "minDistFromPlots": 2,
         "minDistFromSame": 10,
         "minDistFromAny": 4,
         "affinity": "near-path",
+        "allowOverlapWater": false,
+        "allowOverlapDecorations": true,
         "requiresGrass": true
       },
-      "tags": ["berry", "food", "natural"],
+      "tags": [
+        "berry",
+        "food",
+        "natural"
+      ],
       "rarity": 0.7,
       "minWorldArea": 300,
       "maxInstances": 3
+    },
+    {
+      "id": "testid",
+      "name": "tesname",
+      "category": "decorative",
+      "width": 5,
+      "height": 5,
+      "tiles": [
+        {
+          "x": 1,
+          "y": 1,
+          "layer": 0,
+          "type": "tilled",
+          "spriteId": "tilled-dirt/dirt-center"
+        },
+        {
+          "x": 2,
+          "y": 2,
+          "layer": 0,
+          "type": "tilled",
+          "spriteId": "tilled-dirt/dirt-center"
+        },
+        {
+          "x": 1,
+          "y": 2,
+          "layer": 0,
+          "type": "tilled",
+          "spriteId": "tilled-dirt/dirt-center"
+        },
+        {
+          "x": 2,
+          "y": 1,
+          "layer": 0,
+          "type": "tilled",
+          "spriteId": "tilled-dirt/dirt-center"
+        },
+        {
+          "x": 0,
+          "y": 2,
+          "layer": 0,
+          "type": "tilled",
+          "spriteId": "tilled-dirt/dirt-edge-w"
+        },
+        {
+          "x": 0,
+          "y": 1,
+          "layer": 0,
+          "type": "tilled",
+          "spriteId": "tilled-dirt/dirt-edge-w"
+        },
+        {
+          "x": 0,
+          "y": 0,
+          "layer": 0,
+          "type": "tilled",
+          "spriteId": "tilled-dirt/dirt-var1"
+        },
+        {
+          "x": 1,
+          "y": 0,
+          "layer": 0,
+          "type": "tilled",
+          "spriteId": "tilled-dirt/dirt-edge-n"
+        },
+        {
+          "x": 2,
+          "y": 0,
+          "layer": 0,
+          "type": "tilled",
+          "spriteId": "tilled-dirt/dirt-edge-n"
+        },
+        {
+          "x": 3,
+          "y": 0,
+          "layer": 0,
+          "type": "tilled",
+          "spriteId": "tilled-dirt/dirt-edge-n"
+        },
+        {
+          "x": 4,
+          "y": 0,
+          "layer": 0,
+          "type": "tilled",
+          "spriteId": "tilled-dirt/dirt-corner-ne"
+        },
+        {
+          "x": 4,
+          "y": 1,
+          "layer": 0,
+          "type": "tilled",
+          "spriteId": "tilled-dirt/dirt-edge-e"
+        },
+        {
+          "x": 3,
+          "y": 1,
+          "layer": 0,
+          "type": "tilled",
+          "spriteId": "tilled-dirt/dirt-center"
+        },
+        {
+          "x": 2,
+          "y": 4,
+          "layer": 0,
+          "type": "tilled",
+          "spriteId": "tilled-dirt/dirt-edge-s"
+        },
+        {
+          "x": 3,
+          "y": 4,
+          "layer": 0,
+          "type": "tilled",
+          "spriteId": "tilled-dirt/dirt-edge-s"
+        },
+        {
+          "x": 4,
+          "y": 4,
+          "layer": 0,
+          "type": "tilled",
+          "spriteId": "tilled-dirt/dirt-corner-nw"
+        },
+        {
+          "x": 4,
+          "y": 2,
+          "layer": 0,
+          "type": "tilled",
+          "spriteId": "tilled-dirt/dirt-edge-e"
+        },
+        {
+          "x": 4,
+          "y": 3,
+          "layer": 0,
+          "type": "tilled",
+          "spriteId": "tilled-dirt/dirt-edge-e"
+        },
+        {
+          "x": 1,
+          "y": 4,
+          "layer": 0,
+          "type": "tilled",
+          "spriteId": "tilled-dirt/dirt-edge-s"
+        }
+      ],
+      "connectionPoints": [],
+      "placement": {
+        "minDistFromPlots": 3,
+        "minDistFromSame": 10,
+        "minDistFromAny": 4,
+        "affinity": "any",
+        "allowOverlapWater": false,
+        "allowOverlapDecorations": true,
+        "requiresGrass": true
+      },
+      "tags": [],
+      "rarity": 0.5,
+      "minWorldArea": 300,
+      "maxInstances": -1
     }
   ]
 }

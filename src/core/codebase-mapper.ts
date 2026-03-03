@@ -388,8 +388,9 @@ export class CodebaseMapper {
   }
 
   /**
-   * Squarified treemap algorithm
-   * Returns rectangles allocated to each item proportional to its weight
+   * Squarified treemap algorithm (Bruls, Huizing, van Wijk).
+   * Groups items into rows against the shorter side to minimize
+   * worst-case aspect ratios, producing more square-like rectangles.
    */
   private squarify(
     items: FileNode[],
@@ -400,39 +401,128 @@ export class CodebaseMapper {
     h: number
   ): Array<{ x: number; y: number; w: number; h: number }> {
     const totalWeight = weights.reduce((a, b) => a + b, 0);
-    const rects: Array<{ x: number; y: number; w: number; h: number }> = [];
+    if (totalWeight === 0 || items.length === 0) return [];
 
-    if (totalWeight === 0 || items.length === 0) return rects;
+    // Sort indices by weight descending for better squarification
+    const sortedIndices = items.map((_, i) => i).sort((a, b) => weights[b] - weights[a]);
 
-    // Simple strip-based layout (horizontal or vertical based on aspect ratio)
-    let remainX = x;
-    let remainY = y;
-    let remainW = w;
-    let remainH = h;
-    let remainWeight = totalWeight;
-
-    for (let i = 0; i < items.length; i++) {
-      const fraction = weights[i] / remainWeight;
-
-      if (remainW >= remainH) {
-        // Vertical split
-        const sliceW = Math.max(TILE_SIZE, Math.round(remainW * fraction));
-        rects.push({ x: remainX, y: remainY, w: sliceW, h: remainH });
-        remainX += sliceW;
-        remainW -= sliceW;
-      } else {
-        // Horizontal split
-        const sliceH = Math.max(TILE_SIZE, Math.round(remainH * fraction));
-        rects.push({ x: remainX, y: remainY, w: remainW, h: sliceH });
-        remainY += sliceH;
-        remainH -= sliceH;
-      }
-
-      remainWeight -= weights[i];
-      if (remainWeight <= 0) remainWeight = 1; // prevent division by zero
-    }
+    const rects: Array<{ x: number; y: number; w: number; h: number }> = new Array(items.length);
+    this.squarifyRecurse(sortedIndices, weights, 0, x, y, w, h, rects);
 
     return rects;
+  }
+
+  /**
+   * Recursive squarified treemap: builds one row at a time against the
+   * shorter side, adding items while aspect ratios improve.
+   */
+  private squarifyRecurse(
+    indices: number[],
+    weights: number[],
+    startIdx: number,
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    rects: Array<{ x: number; y: number; w: number; h: number }>
+  ): void {
+    const remaining = indices.length - startIdx;
+    if (remaining <= 0 || w <= 0 || h <= 0) return;
+
+    // Last item takes all remaining space
+    if (remaining === 1) {
+      rects[indices[startIdx]] = { x, y, w: Math.max(TILE_SIZE, w), h: Math.max(TILE_SIZE, h) };
+      return;
+    }
+
+    // If the remaining area is too small, do a simple linear split
+    if (w < TILE_SIZE * 2 && h < TILE_SIZE * 2) {
+      for (let i = startIdx; i < indices.length; i++) {
+        rects[indices[i]] = { x, y, w: Math.max(TILE_SIZE, w), h: Math.max(TILE_SIZE, h) };
+      }
+      return;
+    }
+
+    // Compute total weight of remaining items
+    let totalW = 0;
+    for (let i = startIdx; i < indices.length; i++) {
+      totalW += weights[indices[i]];
+    }
+    if (totalW <= 0) return;
+
+    const area = w * h;
+    const s = Math.min(w, h); // shorter side
+
+    // Build row: add items while worst aspect ratio improves
+    let rowSum = 0;
+    let bestEnd = startIdx + 1;
+    let bestWorst = Infinity;
+
+    for (let end = startIdx + 1; end <= indices.length; end++) {
+      rowSum += weights[indices[end - 1]];
+
+      // Row dimensions
+      const rowArea = (rowSum / totalW) * area;
+      const d = rowArea / s; // row thickness (perpendicular to shorter side)
+
+      // Find worst aspect ratio in this candidate row
+      let worst = 0;
+      for (let j = startIdx; j < end; j++) {
+        const itemArea = (weights[indices[j]] / totalW) * area;
+        const len = d > 0 ? itemArea / d : 1;
+        const ar = d > 0 && len > 0 ? Math.max(d / len, len / d) : Infinity;
+        worst = Math.max(worst, ar);
+      }
+
+      if (worst <= bestWorst) {
+        bestWorst = worst;
+        bestEnd = end;
+      } else {
+        break; // Adding more items worsens the ratio
+      }
+    }
+
+    // Lay out the chosen row [startIdx, bestEnd)
+    rowSum = 0;
+    for (let i = startIdx; i < bestEnd; i++) {
+      rowSum += weights[indices[i]];
+    }
+    const rowArea = (rowSum / totalW) * area;
+    const d = s > 0 ? rowArea / s : 0; // row strip thickness
+
+    let pos = 0;
+    for (let i = startIdx; i < bestEnd; i++) {
+      const itemArea = (weights[indices[i]] / totalW) * area;
+      const len = d > 0 ? itemArea / d : s;
+
+      if (w >= h) {
+        // Row is a vertical strip on the left
+        rects[indices[i]] = {
+          x: x,
+          y: y + pos,
+          w: Math.max(TILE_SIZE, d),
+          h: Math.max(TILE_SIZE, len),
+        };
+      } else {
+        // Row is a horizontal strip on the top
+        rects[indices[i]] = {
+          x: x + pos,
+          y: y,
+          w: Math.max(TILE_SIZE, len),
+          h: Math.max(TILE_SIZE, d),
+        };
+      }
+      pos += len;
+    }
+
+    // Recurse on remaining items in the reduced rectangle
+    if (bestEnd < indices.length) {
+      if (w >= h) {
+        this.squarifyRecurse(indices, weights, bestEnd, x + d, y, w - d, h, rects);
+      } else {
+        this.squarifyRecurse(indices, weights, bestEnd, x, y + d, w, h - d, rects);
+      }
+    }
   }
 
   // ─── Internal: Tile Creation ────────────────────────────────────────────

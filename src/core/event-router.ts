@@ -33,6 +33,8 @@ export const ROUTER_EVENTS = {
   TOOL_RESULT: 'tool_result',
   USAGE: 'usage',
   ACTIVITY_ENTRY: 'activity_entry',
+  SUBAGENT_START: 'subagent_start',
+  SUBAGENT_STOP: 'subagent_stop',
 } as const;
 
 export class EventRouter extends EventEmitter {
@@ -306,6 +308,7 @@ export class EventRouter extends EventEmitter {
     };
 
     this.emit(ROUTER_EVENTS.EVENT, event);
+    this.emit(ROUTER_EVENTS.SUBAGENT_START, event);
 
     const activity: ActivityEntry = {
       id: event.id,
@@ -332,6 +335,7 @@ export class EventRouter extends EventEmitter {
     };
 
     this.emit(ROUTER_EVENTS.EVENT, event);
+    this.emit(ROUTER_EVENTS.SUBAGENT_STOP, event);
   }
 
   /**

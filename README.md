@@ -13,11 +13,13 @@ A consolidated pixel-art interface showing:
 
 ### Overworld Map
 Your file system visualized as a pixel-art farm/world:
-- **Files as crops/plots** - Different file types shown as different tile types
-- **Directories as fields** - Fenced areas containing related files
+- **Directories as fenced fields** - Each directory becomes a fenced plot with tilled dirt
+- **Files as crops inside fields** - Crops laid out in a grid inside their parent directory's fence
+- **Crop types by extension** - .ts/.js → wheat, .py → pumpkin, .css → flower, .json → seedling
+- **Procedural terrain** - Noise-based grass, organic water ponds, clustered decorations
+- **Path network** - MST-connected paths between all directory plots with auto-tiling
 - **Agent movement** - Watch the agent walk between files as it works
-- **Treemap layout** - Spatial organization based on file structure
-- **Color-coded** - File types distinguished by PICO-8 palette colors
+- **Squarified treemap layout** - Balanced spatial organization based on file structure
 
 ### Live Activity Feed
 Each tool invocation visualized in real-time:

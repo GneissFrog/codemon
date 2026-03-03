@@ -255,6 +255,14 @@ export class WorldMap {
   // ─── World Info ──────────────────────────────────────────────────────────
 
   /**
+   * Set world dimensions (call after world generation)
+   */
+  setDimensions(width: number, height: number): void {
+    this.width = width;
+    this.height = height;
+  }
+
+  /**
    * Get world dimensions
    */
   getDimensions(): { width: number; height: number } {

@@ -144,7 +144,7 @@ export class ModuleEditorPanel implements vscode.WebviewViewProvider {
 
     /* ─── Sprite Palette ─── */
     .palette-container {
-      max-height: 120px; overflow-y: auto;
+      max-height: 280px; overflow-y: auto;
       border: 1px solid var(--pixel-border);
       margin-bottom: 6px; padding: 2px;
     }
@@ -247,6 +247,7 @@ export class ModuleEditorPanel implements vscode.WebviewViewProvider {
     <div class="palette-container">
       <div class="palette-grid" id="palette-grid"></div>
     </div>
+    <div id="palette-count" style="font-size:9px;color:var(--pixel-muted);margin-bottom:4px;"></div>
 
     <!-- Layer Panel -->
     <div class="section-label">Layers</div>
@@ -388,10 +389,19 @@ export class ModuleEditorPanel implements vscode.WebviewViewProvider {
       const sheet = spritesheets[sheetName];
       if (!sheet) return;
 
+      const spriteCount = Object.keys(sheet.sprites).length;
+      console.log('[ModuleEditor] Loading palette for:', sheetName, 'sprite count:', spriteCount);
+
       // Load sheet image
       const img = new Image();
       img.src = sheet.imageUrl;
+      img.onerror = () => {
+        console.error('[ModuleEditor] Failed to load image for:', sheetName);
+        paletteGrid.innerHTML = '<div style="color:red;font-size:10px;">Failed to load sheet image</div>';
+      };
       img.onload = () => {
+        console.log('[ModuleEditor] Image loaded, rendering', spriteCount, 'sprites');
+        let rendered = 0;
         for (const [spriteName, sprite] of Object.entries(sheet.sprites)) {
           const spriteCanvas = document.createElement('canvas');
           spriteCanvas.width = 24;
@@ -417,7 +427,9 @@ export class ModuleEditorPanel implements vscode.WebviewViewProvider {
           });
 
           paletteGrid.appendChild(spriteCanvas);
+          rendered++;
         }
+        document.getElementById('palette-count').textContent = rendered + ' sprites';
       };
     }
 
