@@ -253,6 +253,31 @@ export class GameViewPanel {
   }
 
   /**
+   * Spawn a subagent animal on the map
+   */
+  public spawnSubagent(id: string, agentType: string): void {
+    if (this._panel) {
+      this._panel.webview.postMessage({
+        type: 'spawnSubagent',
+        id,
+        agentType,
+      });
+    }
+  }
+
+  /**
+   * Remove a subagent animal from the map
+   */
+  public despawnSubagent(id: string): void {
+    if (this._panel) {
+      this._panel.webview.postMessage({
+        type: 'despawnSubagent',
+        id,
+      });
+    }
+  }
+
+  /**
    * Reset session state
    */
   public resetSession(): void {
@@ -318,13 +343,16 @@ export class GameViewPanel {
 
   private _getHtmlForWebview(webview: vscode.Webview): string {
     const nonce = getNonce();
+    const scriptUri = webview.asWebviewUri(
+      vscode.Uri.joinPath(this._extensionUri, 'dist', 'webview-gameview.js')
+    );
 
     return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'nonce-${nonce}'; img-src data:;">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'nonce-${nonce}' ${webview.cspSource}; img-src data:;">
   <title>CodeMon Game View</title>
   <style>
     ${PIXEL_THEME_CSS}
@@ -487,6 +515,20 @@ export class GameViewPanel {
     .map-title {
       font-size: 10px;
       color: var(--pixel-accent);
+    }
+
+    .renderer-badge {
+      font-size: 7px;
+      padding: 2px 6px;
+      background: var(--pixel-bg);
+      border: 1px solid var(--pixel-border);
+      color: var(--pixel-muted);
+      margin-left: 8px;
+    }
+
+    .renderer-badge.pixi {
+      color: #e94560;
+      border-color: #e94560;
     }
 
     .map-stats {
@@ -680,7 +722,10 @@ export class GameViewPanel {
     <!-- Main Map -->
     <div class="map-area">
       <div class="map-header">
-        <span class="map-title">CODEBASE</span>
+        <div style="display: flex; align-items: center;">
+          <span class="map-title">CODEBASE</span>
+          <span class="renderer-badge" id="renderer-badge">Loading...</span>
+        </div>
         <span class="map-stats" id="map-stats">0 files</span>
       </div>
 
@@ -705,814 +750,58 @@ export class GameViewPanel {
     </div>
   </div>
 
+  <!-- Load the bundled game view script -->
+  <script src="${scriptUri}"></script>
+
   <script nonce="${nonce}">
     const vscode = acquireVsCodeApi();
 
-    // ─── State ──────────────────────────────────────────────────────────
-    let tiles = [];
-    let worldTiles = [];   // Serialized tile grid from WorldGenerator
-    let worldPlots = [];   // Plot metadata (files/directories)
-    let layoutWidth = 400;
-    let layoutHeight = 300;
-    let glowPhase = 0;
-    let config = null;
-
-    // Agent state
-    let agent = {
-      x: 200,
-      y: 150,
-      targetX: 200,
-      targetY: 150,
-      isMoving: false,
-      filePath: null,
-      animation: 'idle',
-      frameIndex: 0,
-      type: 'ranger',
-      direction: 'down'
-    };
-
-    // Map interaction state
-    let zoom = 1;
-    let panX = 0;
-    let panY = 0;
-    let isPanning = false;
-    let panStartX = 0;
-    let panStartY = 0;
-    let panStartPanX = 0;
-    let panStartPanY = 0;
-    let hoveredTile = null;
-    let sessionTokens = 0;
-    let maxSessionTokens = 100000; // For session bar
-
-    let highlightSpriteId = null; // Sprite highlighting
-
-    // ─── DOM refs ───────────────────────────────────────────────
-
-    // ─── DOM refs ───────────────────────────────────────────────────────
-    const mapCanvas = document.getElementById('map-canvas');
-    const mapCtx = mapCanvas.getContext('2d');
-    const mapWrapper = document.getElementById('map-wrapper');
-    const mapEmpty = document.getElementById('map-empty');
-    const mapStats = document.getElementById('map-stats');
-    const tooltip = document.getElementById('tooltip');
-    const tooltipName = document.getElementById('tooltip-name');
-    const tooltipPath = document.getElementById('tooltip-path');
-    const logFeed = document.getElementById('log-feed');
-    const toolsGrid = document.getElementById('tools-grid');
-    const hudSpriteCanvas = document.getElementById('hud-sprite-canvas');
-    const hudCtx = hudSpriteCanvas.getContext('2d');
-
-    mapCtx.imageSmoothingEnabled = false;
-    hudCtx.imageSmoothingEnabled = false;
-
-    // ─── Sprite Colors ──────────────────────────────────────────────────
-    const SPRITE_COLORS = {
-      knight: { primary: '#ff77a8', secondary: '#83769c', accent: '#ffec27', name: 'KNIGHT' },
-      ranger: { primary: '#29adff', secondary: '#1d2b53', accent: '#00e436', name: 'RANGER' },
-      rogue: { primary: '#00e436', secondary: '#003d28', accent: '#29adff', name: 'ROGUE' }
-    };
-
-    // ─── Animations ─────────────────────────────────────────────────────
-    const ANIMATIONS = {
-      idle: [
-        { bodyY: 0, eyeY: 0, armOffset: 0 },
-        { bodyY: -1, eyeY: 0, armOffset: 0 }
-      ],
-      walk: [
-        { bodyY: 0, eyeY: 0, armOffset: 4, legOffset: 2 },
-        { bodyY: -1, eyeY: 0, armOffset: -4, legOffset: -2 }
-      ],
-      investigate: [
-        { bodyY: 0, eyeY: 2, armOffset: 4 },
-        { bodyY: 0, eyeY: 2, armOffset: 6 }
-      ],
-      write: [
-        { bodyY: 0, eyeY: 0, armOffset: 2 },
-        { bodyY: 0, eyeY: 0, armOffset: -2 }
-      ],
-      bash: [
-        { bodyY: 0, eyeY: 0, armOffset: 8 },
-        { bodyY: -2, eyeY: 0, armOffset: -4 }
-      ]
-    };
-
-    // ─── Sprite System ─────────────────────────────────────────────────
-    let spritesheets = {};
-    let spritesLoaded = false;
-    let spriteMappings = { character: 'claude-actions' };  // Default mappings, updated from manifest
-    const TILE_SIZE = 16;
-
-    // ─── Animation System ───────────────────────────────────────────────
-    // Tracks animated sprite overrides (e.g., water tiles cycling frames)
-    const tileAnimations = new Map(); // key -> { frames: string[], fps, currentFrame, timer, loop }
-    let lastFrameTime = performance.now();
-    let manifest = null;
-
-    function initAnimations(manifestData) {
-      manifest = manifestData;
-      // Animation definitions will be applied when world tiles are received
-    }
-
-    function registerTileAnimations() {
-      tileAnimations.clear();
-      if (!manifest || !manifest.animations) return;
-
-      // Register water animations for water tiles
-      for (const tile of worldTiles) {
-        if (tile.type === 'water') {
-          const key = tile.x + ',' + tile.y;
-          const waterAnim = manifest.animations['water-flow'];
-          if (waterAnim) {
-            // Offset the start frame based on position for visual variety
-            const startFrame = Math.abs((tile.x * 3 + tile.y * 7) % waterAnim.frames.length);
-            tileAnimations.set(key, {
-              frames: waterAnim.frames.map(f => 'water/' + f),
-              fps: waterAnim.fps,
-              currentFrame: startFrame,
-              timer: 0,
-              loop: waterAnim.loop,
-            });
-          }
-        }
-      }
-    }
-
-    function updateAnimations(deltaTime) {
-      for (const [key, anim] of tileAnimations) {
-        anim.timer += deltaTime;
-        const frameTime = 1000 / anim.fps;
-        if (anim.timer >= frameTime) {
-          anim.timer -= frameTime;
-          if (anim.currentFrame < anim.frames.length - 1) {
-            anim.currentFrame++;
-          } else if (anim.loop) {
-            anim.currentFrame = 0;
-          }
-        }
-      }
-    }
-
-    function getAnimatedSpriteId(tile) {
-      const key = tile.x + ',' + tile.y;
-      const anim = tileAnimations.get(key);
-      if (anim) {
-        return anim.frames[anim.currentFrame];
-      }
-      return tile.spriteId;
-    }
-
-    async function loadAssets(assetsData) {
-      if (!assetsData || !assetsData.spritesheets) {
-        console.warn('[GameView] No assets data received');
+    // Initialize the game view when the bundle is loaded
+    async function init() {
+      // Wait for the bundle to load
+      if (typeof window.initGameView !== 'function') {
+        console.error('[GameView] Bundle not loaded, window.initGameView not found');
         return;
       }
 
-      console.log('[GameView] Loading sprites...');
+      const canvas = document.getElementById('map-canvas');
+      const hudCanvas = document.getElementById('hud-sprite-canvas');
+      const mapWrapper = document.getElementById('map-wrapper');
+      const mapEmpty = document.getElementById('map-empty');
+      const mapStats = document.getElementById('map-stats');
+      const tooltip = document.getElementById('tooltip');
+      const tooltipName = document.getElementById('tooltip-name');
+      const tooltipPath = document.getElementById('tooltip-path');
+      const logFeed = document.getElementById('log-feed');
+      const toolsGrid = document.getElementById('tools-grid');
+      const rendererBadge = document.getElementById('renderer-badge');
 
-      // Store the sprite mappings
-      if (assetsData.spriteMappings) {
-        spriteMappings = assetsData.spriteMappings;
-        console.log('[GameView] Sprite mappings:', spriteMappings);
-      }
+      try {
+        await window.initGameView({
+          canvas,
+          hudCanvas,
+          mapWrapper,
+          mapEmpty,
+          mapStats,
+          tooltip,
+          tooltipName,
+          tooltipPath,
+          logFeed,
+          toolsGrid,
+          rendererBadge,
+        });
 
-      for (const [name, sheetData] of Object.entries(assetsData.spritesheets)) {
-        try {
-          const img = new Image();
-          img.src = sheetData.imageUrl;
-
-          await new Promise((resolve, reject) => {
-            img.onload = resolve;
-            img.onerror = reject;
-          });
-
-          spritesheets[name] = {
-            image: img,
-            sprites: sheetData.sprites,
-          };
-
-          console.log('[GameView] Loaded spritesheet:', name);
-        } catch (error) {
-          console.warn('[GameView] Failed to load spritesheet:', name, error);
-        }
-      }
-
-      spritesLoaded = Object.keys(spritesheets).length > 0;
-      console.log('[GameView] Sprites loaded:', spritesLoaded);
-
-      // Store manifest for animation definitions
-      if (assetsData.manifest) {
-        initAnimations(assetsData.manifest);
+        // Signal ready to extension
+        vscode.postMessage({ type: 'webviewReady' });
+        console.log('[GameView] Initialized successfully');
+      } catch (error) {
+        console.error('[GameView] Failed to initialize:', error);
       }
     }
 
-    function drawSprite(spriteId, dx, dy, dw, dh) {
-      const [sheetName, spriteName] = spriteId.split('/');
-      const sheet = spritesheets[sheetName];
+    // Start initialization
+    init();
 
-      if (!sheet || !sheet.sprites[spriteName]) {
-        return false;
-      }
-
-      const sprite = sheet.sprites[spriteName];
-      mapCtx.drawImage(
-        sheet.image,
-        sprite.x, sprite.y, sprite.w, sprite.h,
-        dx, dy, dw || sprite.w, dh || sprite.h
-      );
-      return true;
-    }
-
-    // ─── HUD Sprite Rendering ───────────────────────────────────────────
-    function drawHudSprite() {
-      const colors = SPRITE_COLORS[agent.type];
-      const frame = ANIMATIONS[agent.animation][agent.frameIndex];
-      const s = 4; // scale
-
-      hudCtx.clearRect(0, 0, 64, 64);
-      hudCtx.save();
-      hudCtx.translate(32, 32 + frame.bodyY);
-
-      // Body
-      hudCtx.fillStyle = colors.primary;
-      hudCtx.fillRect(-8*s, -10*s, 16*s, 20*s);
-
-      // Head
-      hudCtx.fillRect(-6*s, -18*s, 12*s, 10*s);
-
-      // Eyes
-      hudCtx.fillStyle = '#1a1c2c';
-      hudCtx.fillRect(-4*s, (-14 + frame.eyeY)*s, 2*s, 2*s);
-      hudCtx.fillRect(2*s, (-14 + frame.eyeY)*s, 2*s, 2*s);
-
-      // Arms
-      hudCtx.fillStyle = colors.secondary;
-      hudCtx.fillRect(-11*s, (-6 + frame.armOffset)*s, 3*s, 8*s);
-      hudCtx.fillRect(8*s, (-6 - frame.armOffset)*s, 3*s, 8*s);
-
-      // Legs
-      const legOffset = frame.legOffset || 0;
-      hudCtx.fillRect(-6*s, (10 + legOffset)*s, 4*s, 6*s);
-      hudCtx.fillRect(2*s, (10 - legOffset)*s, 4*s, 6*s);
-
-      // Accessory
-      hudCtx.fillStyle = colors.accent;
-      if (agent.type === 'ranger') {
-        hudCtx.fillStyle = colors.secondary;
-        hudCtx.fillRect(-7*s, -20*s, 14*s, 4*s);
-        hudCtx.fillStyle = colors.accent;
-        hudCtx.fillRect(12*s, -8*s, 2*s, 12*s);
-      } else if (agent.type === 'knight') {
-        hudCtx.fillRect(-4*s, -16*s, 8*s, 2*s);
-        hudCtx.fillRect(-14*s, -4*s, 4*s, 8*s);
-      } else if (agent.type === 'rogue') {
-        hudCtx.fillStyle = colors.secondary;
-        hudCtx.fillRect(-7*s, -19*s, 14*s, 3*s);
-        hudCtx.fillStyle = colors.accent;
-        hudCtx.fillRect(-13*s, 0, 2*s, 8*s);
-      }
-
-      hudCtx.restore();
-    }
-
-    // ─── Map Rendering ──────────────────────────────────────────────────
-    function renderMap() {
-      if (tiles.length === 0 && worldTiles.length === 0) return;
-
-      const w = mapCanvas.width;
-      const h = mapCanvas.height;
-
-      // Clear with background
-      mapCtx.fillStyle = '#1a1c2c';
-      mapCtx.fillRect(0, 0, w, h);
-
-      // Wait for sprites to load
-      if (!spritesLoaded) {
-        mapCtx.fillStyle = '#5a5d6e';
-        mapCtx.font = '12px monospace';
-        mapCtx.textAlign = 'center';
-        mapCtx.fillText('Loading sprites...', w / 2, h / 2);
-        mapCtx.textAlign = 'left';
-        return;
-      }
-
-      // Compute scale
-      const baseScaleX = w / layoutWidth;
-      const baseScaleY = h / layoutHeight;
-      const baseScale = Math.min(baseScaleX, baseScaleY);
-
-      mapCtx.save();
-      mapCtx.translate(panX, panY);
-      mapCtx.scale(zoom * baseScale, zoom * baseScale);
-
-      // Use world tile grid if available (unified data path)
-      if (worldTiles.length > 0) {
-        renderWorldTiles();
-      }
-
-      // Draw agent sprite on map (always draw at current position)
-      drawMapAgent();
-
-      // Draw active glows and sparkles using MapLayout tiles
-      for (const tile of tiles) {
-        if (!tile.isDir && tile.node && tile.node.isActive) {
-          drawActiveGlow(tile);
-        }
-        // Sparkle for high activity
-        if (!tile.isDir && tile.node && (tile.node.readCount + tile.node.writeCount) >= 5) {
-          const sparkleX = tile.x + tile.width * 0.5 + Math.sin(glowPhase * 3 + tile.x) * 2;
-          const sparkleY = tile.y + tile.height * 0.5 + Math.cos(glowPhase * 2 + tile.y) * 2;
-          mapCtx.fillStyle = 'rgba(255, 255, 255, ' + (0.3 + Math.sin(glowPhase * 4) * 0.3) + ')';
-          mapCtx.fillRect(sparkleX - 0.5, sparkleY - 0.5, 1, 1);
-        }
-      }
-
-      // Hover highlight
-      if (hoveredTile) {
-        mapCtx.fillStyle = 'rgba(255, 255, 255, 0.15)';
-        mapCtx.fillRect(hoveredTile.x, hoveredTile.y, hoveredTile.width, hoveredTile.height);
-      }
-
-      mapCtx.restore();
-    }
-
-    /**
-     * Render from the unified world tile grid (sorted by layer)
-     */
-    function renderWorldTiles() {
-      // Sort tiles by layer for proper draw order
-      const sorted = worldTiles.slice().sort((a, b) => a.layer - b.layer);
-
-      for (const tile of sorted) {
-        const spriteId = getAnimatedSpriteId(tile);
-        drawSprite(spriteId, tile.x * TILE_SIZE, tile.y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
-
-        // Highlight matching sprites
-        if (highlightSpriteId && spriteId === highlightSpriteId) {
-          const glowAlpha = 0.3 + Math.sin(glowPhase * 3) * 0.2;
-          mapCtx.strokeStyle = 'rgba(255, 200, 0, ' + glowAlpha + ')';
-          mapCtx.lineWidth = 2;
-          mapCtx.strokeRect(
-            tile.x * TILE_SIZE - 1,
-            tile.y * TILE_SIZE - 1,
-            TILE_SIZE + 2,
-            TILE_SIZE + 2
-          );
-        }
-      }
-
-      // Draw directory labels from plots
-      for (const plot of worldPlots) {
-        if (plot.isDirectory && plot.filePath) {
-          const label = plot.filePath.split('/').pop() || plot.filePath.split('\\\\').pop() || '';
-          if (label && plot.width >= 3) {
-            mapCtx.fillStyle = '#8a8a8a';
-            mapCtx.font = '7px monospace';
-            const maxChars = Math.floor((plot.width * TILE_SIZE - 4) / 5);
-            const truncLabel = label.length > maxChars ? label.slice(0, maxChars - 1) + '~' : label;
-            mapCtx.fillText(truncLabel, plot.x * TILE_SIZE + 3, plot.y * TILE_SIZE + 10);
-          }
-        }
-      }
-    }
-
-    function drawActiveGlow(tile) {
-      const alpha = 0.3 + Math.sin(glowPhase * 4) * 0.2;
-      const size = 2 + Math.sin(glowPhase * 3) * 1;
-
-      mapCtx.fillStyle = 'rgba(41, 173, 255, ' + alpha + ')';
-      mapCtx.fillRect(tile.x - size, tile.y - size, tile.width + size * 2, tile.height + size * 2);
-    }
-
-    // Helper: Get character sprite ID based on action, direction, and frame
-    function getCharacterSpriteId(action, direction, frameIndex) {
-      const sheet = spriteMappings['character'] || 'claude-actions';
-      const frame = frameIndex % 6; // 6 frames per animation
-      return sheet + '/char-' + action + '-' + direction + '-' + frame;
-    }
-
-    // Action-to-animation mapping based on tool name
-    function getActionForTool(toolName) {
-      const actionMap = {
-        'Read': 'harvest',
-        'Glob': 'walk',
-        'Grep': 'walk',
-        'Write': 'plant',
-        'Edit': 'plant',
-        'NotebookEdit': 'plant',
-        'Bash': 'water'
-      };
-      return actionMap[toolName] || 'idle';
-    }
-
-    function drawMapAgent() {
-      // Try to use spritesheet first
-      const action = agent.animation || 'idle';
-      const dir = agent.direction || 'down';
-      const spriteId = getCharacterSpriteId(action, dir, agent.frameIndex);
-
-      // Draw sprite if available
-      if (spritesLoaded) {
-        const drawn = drawSprite(spriteId, agent.x - 8, agent.y - 12, 16, 24);
-        if (drawn) {
-          // Cursor indicator
-          const cursorAlpha = 0.5 + Math.sin(glowPhase * 5) * 0.3;
-          mapCtx.strokeStyle = 'rgba(255, 236, 39, ' + cursorAlpha + ')';
-          mapCtx.lineWidth = 1;
-          mapCtx.strokeRect(agent.x - 8, agent.y - 12, 16, 24);
-          return;
-        }
-      }
-
-      // Fallback to programmatic rendering if sprite not found
-      const colors = SPRITE_COLORS[agent.type];
-      const frame = ANIMATIONS[agent.animation][agent.frameIndex];
-      const s = 1.5; // Smaller scale for map
-
-      mapCtx.save();
-      mapCtx.translate(agent.x, agent.y);
-      mapCtx.translate(0, frame.bodyY);
-
-      // Shadow
-      mapCtx.fillStyle = 'rgba(0, 0, 0, 0.3)';
-      mapCtx.beginPath();
-      mapCtx.ellipse(0, 12*s, 6*s, 2*s, 0, 0, Math.PI * 2);
-      mapCtx.fill();
-
-      // Body
-      mapCtx.fillStyle = colors.primary;
-      mapCtx.fillRect(-4*s, -6*s, 8*s, 12*s);
-
-      // Head
-      mapCtx.fillRect(-3*s, -10*s, 6*s, 5*s);
-
-      // Eyes
-      mapCtx.fillStyle = '#1a1c2c';
-      mapCtx.fillRect(-2*s, (-8 + (frame.eyeY || 0))*s, 1*s, 1*s);
-      mapCtx.fillRect(1*s, (-8 + (frame.eyeY || 0))*s, 1*s, 1*s);
-
-      // Accent
-      mapCtx.fillStyle = colors.accent;
-      mapCtx.fillRect(5*s, -4*s, 1*s, 6*s);
-
-      mapCtx.restore();
-
-      // Cursor indicator
-      const cursorAlpha = 0.5 + Math.sin(glowPhase * 5) * 0.3;
-      mapCtx.strokeStyle = 'rgba(255, 236, 39, ' + cursorAlpha + ')';
-      mapCtx.lineWidth = 1;
-      mapCtx.strokeRect(agent.x - 8, agent.y - 12, 16, 24);
-    }
-
-    // ─── Agent Movement ─────────────────────────────────────────────────
-    function updateAgentPosition() {
-      if (!agent.isMoving) return;
-
-      const speed = 0.08;
-      const dx = agent.targetX - agent.x;
-      const dy = agent.targetY - agent.y;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-
-      if (dist < 1) {
-        agent.x = agent.targetX;
-        agent.y = agent.targetY;
-        agent.isMoving = false;
-        agent.animation = 'idle';
-      } else {
-        agent.x += dx * speed;
-        agent.y += dy * speed;
-        agent.animation = 'walk';
-
-        // Calculate direction based on movement vector
-        if (Math.abs(dx) > Math.abs(dy)) {
-          agent.direction = dx > 0 ? 'right' : 'left';
-        } else {
-          agent.direction = dy > 0 ? 'down' : 'up';
-        }
-      }
-    }
-
-    function moveAgentToTile(filePath) {
-      const tile = tiles.find(t => !t.isDir && t.node && t.node.path === filePath);
-      if (tile) {
-        agent.targetX = tile.x + tile.width / 2;
-        agent.targetY = tile.y + tile.height / 2;
-        agent.filePath = filePath;
-        agent.isMoving = true;
-      }
-    }
-
-    // ─── Animation Loop ─────────────────────────────────────────────────
-    let animFrame = 0;
-
-    function animate() {
-      const now = performance.now();
-      const deltaTime = now - lastFrameTime;
-      lastFrameTime = now;
-
-      glowPhase += 0.02;
-      animFrame++;
-
-      // Update agent position
-      updateAgentPosition();
-
-      // Update sprite animation frame
-      if (animFrame % 15 === 0) {
-        agent.frameIndex = (agent.frameIndex + 1) % ANIMATIONS[agent.animation].length;
-      }
-
-      // Update tile animations (water flow, etc.)
-      updateAnimations(deltaTime);
-
-      // Render
-      drawHudSprite();
-      if (tiles.length > 0 || worldTiles.length > 0) {
-        renderMap();
-      }
-
-      requestAnimationFrame(animate);
-    }
-
-    animate();
-
-    // ─── Canvas Sizing ──────────────────────────────────────────────────
-    function resizeMapCanvas() {
-      const rect = mapWrapper.getBoundingClientRect();
-      mapCanvas.width = Math.max(100, rect.width);
-      mapCanvas.height = Math.max(100, rect.height);
-      mapCtx.imageSmoothingEnabled = false;
-      renderMap();
-    }
-
-    const resizeObserver = new ResizeObserver(() => resizeMapCanvas());
-    resizeObserver.observe(mapWrapper);
-
-    // ─── Map Interactions ────────────────────────────────────────────────
-    function getTileAtPoint(clientX, clientY) {
-      const rect = mapCanvas.getBoundingClientRect();
-      const baseScaleX = mapCanvas.width / layoutWidth;
-      const baseScaleY = mapCanvas.height / layoutHeight;
-      const baseScale = Math.min(baseScaleX, baseScaleY);
-      const totalScale = zoom * baseScale;
-      const mx = (clientX - rect.left - panX) / totalScale;
-      const my = (clientY - rect.top - panY) / totalScale;
-
-      for (let i = tiles.length - 1; i >= 0; i--) {
-        const t = tiles[i];
-        if (t.isDir) continue;
-        if (mx >= t.x && mx < t.x + t.width && my >= t.y && my < t.y + t.height) {
-          return t;
-        }
-      }
-      return null;
-    }
-
-    mapWrapper.addEventListener('mousemove', (e) => {
-      if (isPanning) {
-        panX = panStartPanX + (e.clientX - panStartX);
-        panY = panStartPanY + (e.clientY - panStartY);
-        return;
-      }
-
-      const tile = getTileAtPoint(e.clientX, e.clientY);
-
-      if (tile && tile !== hoveredTile) {
-        hoveredTile = tile;
-        const node = tile.node;
-        tooltipName.textContent = node.name;
-        tooltipPath.textContent = node.path;
-        tooltip.style.display = 'block';
-      } else if (!tile && hoveredTile) {
-        hoveredTile = null;
-        tooltip.style.display = 'none';
-      }
-
-      if (tile) {
-        const rect = mapWrapper.getBoundingClientRect();
-        let tx = e.clientX - rect.left + 12;
-        let ty = e.clientY - rect.top - 8;
-        if (tx + 200 > rect.width) tx = e.clientX - rect.left - 210;
-        if (ty + 80 > rect.height) ty = e.clientY - rect.top - 80;
-        tooltip.style.left = tx + 'px';
-        tooltip.style.top = ty + 'px';
-      }
-    });
-
-    mapWrapper.addEventListener('mouseleave', () => {
-      hoveredTile = null;
-      tooltip.style.display = 'none';
-    });
-
-    mapWrapper.addEventListener('mousedown', (e) => {
-      if (e.button === 0) {
-        isPanning = true;
-        panStartX = e.clientX;
-        panStartY = e.clientY;
-        panStartPanX = panX;
-        panStartPanY = panY;
-      }
-    });
-
-    window.addEventListener('mouseup', () => {
-      isPanning = false;
-    });
-
-    mapWrapper.addEventListener('dblclick', (e) => {
-      const tile = getTileAtPoint(e.clientX, e.clientY);
-      if (tile && tile.node) {
-        vscode.postMessage({ type: 'openFile', filePath: tile.node.path });
-      }
-    });
-
-    mapWrapper.addEventListener('wheel', (e) => {
-      e.preventDefault();
-      const rect = mapCanvas.getBoundingClientRect();
-      const mx = e.clientX - rect.left;
-      const my = e.clientY - rect.top;
-      const oldZoom = zoom;
-      const delta = e.deltaY > 0 ? 0.9 : 1.1;
-      zoom = Math.min(4, Math.max(0.5, zoom * delta));
-      panX = mx - (mx - panX) * (zoom / oldZoom);
-      panY = my - (my - panY) * (zoom / oldZoom);
-    }, { passive: false });
-
-    // ─── Message Handling ───────────────────────────────────────────────
-    window.addEventListener('message', async event => {
-      const message = event.data;
-
-      switch (message.type) {
-        case 'loadAssets':
-          if (message.assets) {
-            await loadAssets(message.assets);
-          }
-          break;
-        case 'updateMap':
-          // Load assets if provided and not already loaded
-          if (message.assets && !spritesLoaded) {
-            await loadAssets(message.assets);
-          }
-          handleMapUpdate(message.layout, message.world);
-          break;
-        case 'moveAgent':
-          moveAgentToTile(message.filePath);
-          break;
-        case 'addActivity':
-          addActivityEntry(message.entry);
-          break;
-        case 'updateBudget':
-          updateBudget(message.tokens, message.cost, message.percentage);
-          break;
-        case 'setAnimation':
-          agent.animation = message.animation;
-          break;
-        case 'updateConfig':
-          handleConfigUpdate(message.config);
-          break;
-        case 'updateSessionTotal':
-          updateSessionTotal(message.tokens, message.cost);
-          break;
-        case 'resetSession':
-          resetSession();
-          break;
-        case 'highlightSprite':
-          highlightSpriteId = message.spriteId || null;
-          break;
-      }
-    });
-
-    function handleMapUpdate(layout, world) {
-      tiles = layout.tiles || [];
-      layoutWidth = layout.width || 400;
-      layoutHeight = layout.height || 300;
-      mapStats.textContent = layout.fileCount + ' files';
-
-      // Store world tile grid if provided
-      if (world) {
-        worldTiles = world.tiles || [];
-        worldPlots = world.plots || [];
-        // Re-register animations for new world data
-        registerTileAnimations();
-      }
-
-      // Initialize agent position to first file tile if not yet positioned
-      if (!agent.filePath && tiles.length > 0) {
-        const firstFile = tiles.find(t => !t.isDir && t.node);
-        if (firstFile) {
-          agent.x = firstFile.x + firstFile.width / 2;
-          agent.y = firstFile.y + firstFile.height / 2;
-          agent.filePath = firstFile.node.path;
-        }
-      }
-
-      if (tiles.length > 0 || worldTiles.length > 0) {
-        mapEmpty.style.display = 'none';
-        mapCanvas.style.display = 'block';
-        resizeMapCanvas();
-      }
-    }
-
-    function handleConfigUpdate(newConfig) {
-      config = newConfig;
-
-      // Update sprite type based on model
-      if (config.model) {
-        if (config.model.includes('opus')) {
-          agent.type = 'knight';
-        } else if (config.model.includes('haiku')) {
-          agent.type = 'rogue';
-        } else {
-          agent.type = 'ranger';
-        }
-        document.getElementById('sprite-name').textContent = SPRITE_COLORS[agent.type].name;
-      }
-
-      document.getElementById('model-name').textContent = config.model || 'Unknown';
-
-      // Update tools grid
-      if (config.tools && config.tools.length > 0) {
-        toolsGrid.innerHTML = config.tools.slice(0, 12).map(tool =>
-          '<span class="tool-chip">' + formatToolName(tool) + '</span>'
-        ).join('');
-      } else {
-        toolsGrid.innerHTML = '<div class="tool-chip">No tools</div>';
-      }
-    }
-
-    function addActivityEntry(entry) {
-      const div = document.createElement('div');
-      div.className = 'log-entry' + (entry.isError ? ' error' : '');
-
-      const icon = getActivityIcon(entry.icon);
-      const tokens = entry.tokens ? '+' + formatTokens(entry.tokens) : '';
-
-      div.innerHTML = \`
-        <div class="log-entry-header">
-          <span class="log-entry-icon">\${icon} \${entry.label || ''}</span>
-          <span class="log-entry-tokens">\${tokens}</span>
-        </div>
-        <div class="log-entry-detail">\${entry.detail || ''}</div>
-      \`;
-
-      logFeed.appendChild(div);
-      logFeed.scrollTop = logFeed.scrollHeight;
-
-      // Keep only last 50 entries in DOM
-      while (logFeed.children.length > 50) {
-        logFeed.removeChild(logFeed.firstChild);
-      }
-    }
-
-    function updateBudget(tokens, cost, percentage) {
-      const bar = document.getElementById('budget-bar');
-      bar.style.width = percentage + '%';
-      bar.className = 'stat-bar-fill' + (percentage >= 80 ? ' danger' : percentage >= 60 ? ' warning' : '');
-      document.getElementById('budget-percent').textContent = percentage.toFixed(1) + '%';
-      document.getElementById('total-tokens').textContent = formatTokens(tokens) + ' tokens';
-      document.getElementById('total-cost').textContent = '$' + cost.toFixed(4);
-    }
-
-    function updateSessionTotal(tokens, cost) {
-      sessionTokens = tokens;
-      const sessionPercent = Math.min(100, (tokens / maxSessionTokens) * 100);
-      document.getElementById('session-bar').style.width = sessionPercent + '%';
-      document.getElementById('session-tokens').textContent = formatTokens(tokens);
-    }
-
-    function resetSession() {
-      logFeed.innerHTML = '';
-      sessionTokens = 0;
-      document.getElementById('session-bar').style.width = '0%';
-      document.getElementById('session-tokens').textContent = '0';
-    }
-
-    function getActivityIcon(icon) {
-      const icons = {
-        read: '📖',
-        write: '✏️',
-        edit: '✏️',
-        bash: '⚡',
-        glob: '🔍',
-        grep: '🔍',
-        websearch: '🌐',
-        webfetch: '🌐',
-        agent: '🤖',
-        success: '✅',
-        error: '❌'
-      };
-      return icons[icon] || '⚔️';
-    }
-
-    function formatToolName(tool) {
-      return tool.replace(/^(mcp__|MCP)/i, '').substring(0, 8);
-    }
-
-    function formatTokens(tokens) {
-      if (tokens >= 1000000) return (tokens / 1000000).toFixed(1) + 'M';
-      if (tokens >= 1000) return (tokens / 1000).toFixed(1) + 'K';
-      return tokens.toString();
-    }
-
-    // Signal ready
-    vscode.postMessage({ type: 'webviewReady' });
   </script>
 </body>
 </html>`;

@@ -78,7 +78,11 @@
       "properties": {
         "codemon.budget.mode": {
           "type": "string",
-          "enum": ["tokens", "dollars", "subscription"],
+          "enum": [
+            "tokens",
+            "dollars",
+            "subscription"
+          ],
           "default": "subscription",
           "description": "How to track your budget"
         },
@@ -94,7 +98,13 @@
         },
         "codemon.sprite": {
           "type": "string",
-          "enum": ["auto", "knight", "ranger", "rogue", "custom"],
+          "enum": [
+            "auto",
+            "knight",
+            "ranger",
+            "rogue",
+            "custom"
+          ],
           "default": "auto",
           "description": "Agent sprite (auto assigns based on model)"
         },
@@ -105,7 +115,11 @@
         },
         "codemon.integration.mode": {
           "type": "string",
-          "enum": ["auto", "session-logs", "hooks"],
+          "enum": [
+            "auto",
+            "session-logs",
+            "hooks"
+          ],
           "default": "auto",
           "description": "How to receive Claude Code events"
         },
@@ -135,11 +149,14 @@
     "@types/node": "^20.10.0",
     "@types/vscode": "^1.85.0",
     "@types/webpack": "^5.28.0",
+    "esbuild-loader": "^4.4.2",
     "eslint": "^8.54.0",
     "ts-loader": "^9.5.1",
     "typescript": "^5.3.2",
     "webpack": "^5.89.0",
     "webpack-cli": "^5.1.4"
   },
-  "dependencies": {}
+  "dependencies": {
+    "pixi.js": "^8.16.0"
+  }
 }
