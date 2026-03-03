@@ -96,6 +96,17 @@ export class SpriteConfigPanel implements vscode.WebviewViewProvider {
             actions?: string;
           });
           break;
+        case 'updateLighting':
+          // Forward lighting config to GameViewPanel
+          getGameViewPanel(this._extensionUri).updateLighting(message.data as {
+            enabled?: boolean;
+            dayNightCycle?: boolean;
+            agentLight?: boolean;
+            agentLightRadius?: number;
+            agentLightIntensity?: number;
+            agentLightColor?: number;
+          });
+          break;
       }
     });
   }
@@ -1441,6 +1452,95 @@ export class SpriteConfigPanel implements vscode.WebviewViewProvider {
     .action-btn.primary:hover {
       opacity: 0.9;
     }
+
+    /* Lighting Section */
+    .lighting-section {
+      padding: 8px;
+    }
+
+    .lighting-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 8px;
+    }
+
+    .lighting-label {
+      font-size: 9px;
+      color: var(--pixel-fg);
+    }
+
+    .lighting-slider-row {
+      margin-bottom: 8px;
+    }
+
+    .lighting-slider-label {
+      display: flex;
+      justify-content: space-between;
+      font-size: 9px;
+      color: var(--pixel-fg);
+      margin-bottom: 2px;
+    }
+
+    .lighting-slider-value {
+      color: var(--pixel-accent);
+      font-family: monospace;
+    }
+
+    input[type="range"] {
+      width: 100%;
+      height: 4px;
+      background: var(--pixel-bg);
+      border: 1px solid var(--pixel-border);
+      border-radius: 0;
+      outline: none;
+      -webkit-appearance: none;
+      cursor: pointer;
+    }
+
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 12px;
+      height: 12px;
+      background: var(--pixel-accent);
+      border: 1px solid var(--pixel-border);
+      cursor: pointer;
+    }
+
+    input[type="range"]::-webkit-slider-thumb:hover {
+      background: var(--pixel-fg);
+    }
+
+    .color-picker-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+
+    .color-picker-row input[type="color"] {
+      width: 32px;
+      height: 20px;
+      border: 1px solid var(--pixel-border);
+      background: var(--pixel-bg);
+      cursor: pointer;
+      padding: 0;
+    }
+
+    .color-hex {
+      font-size: 9px;
+      font-family: monospace;
+      color: var(--pixel-muted);
+    }
+
+    .lighting-help {
+      font-size: 8px;
+      color: var(--pixel-muted);
+      margin-top: 8px;
+      padding: 4px;
+      background: var(--pixel-bg);
+      border: 1px solid var(--pixel-border);
+    }
   </style>
 </head>
 <body>
@@ -1449,6 +1549,52 @@ export class SpriteConfigPanel implements vscode.WebviewViewProvider {
     <div class="section-content" data-section="spritesheets">
       <div class="spritesheet-list" id="spritesheet-list">
         <div style="color: var(--pixel-muted); font-size: 9px;">Loading...</div>
+      </div>
+    </div>
+
+    <div class="section-title" data-section="lighting">Lighting</div>
+    <div class="section-content" data-section="lighting">
+      <div class="lighting-section">
+        <div class="lighting-row">
+          <span class="lighting-label">Enable Lighting</span>
+          <div class="toggle-switch active" id="lighting-enabled"></div>
+        </div>
+
+        <div class="lighting-row">
+          <span class="lighting-label">Day/Night Cycle</span>
+          <div class="toggle-switch active" id="lighting-daynight"></div>
+        </div>
+
+        <div class="lighting-row">
+          <span class="lighting-label">Agent Torch</span>
+          <div class="toggle-switch active" id="lighting-agent-torch"></div>
+        </div>
+
+        <div class="lighting-slider-row">
+          <div class="lighting-slider-label">
+            <span>Torch Radius</span>
+            <span class="lighting-slider-value" id="torch-radius-value">80</span>
+          </div>
+          <input type="range" id="torch-radius" min="20" max="200" value="80">
+        </div>
+
+        <div class="lighting-slider-row">
+          <div class="lighting-slider-label">
+            <span>Torch Intensity</span>
+            <span class="lighting-slider-value" id="torch-intensity-value">0.8</span>
+          </div>
+          <input type="range" id="torch-intensity" min="0" max="100" value="80">
+        </div>
+
+        <div class="color-picker-row">
+          <span class="lighting-label">Torch Color</span>
+          <input type="color" id="torch-color" value="#ffaa44">
+          <span class="color-hex" id="torch-color-hex">#ffaa44</span>
+        </div>
+
+        <div class="lighting-help">
+          Normal maps require spritesheets with _n.png suffix (e.g., tiles_n.png). Without normal maps, only point light falloff is visible.
+        </div>
       </div>
     </div>
 
@@ -2674,6 +2820,85 @@ export class SpriteConfigPanel implements vscode.WebviewViewProvider {
         document.getElementById('editing-sprite-name').textContent = 'Select a sprite from the list below';
       }
     };
+
+    // ─── Lighting Controls ─────────────────────────────────────────────────
+
+    // Helper to convert hex to number
+    function hexToNumber(hex) {
+      return parseInt(hex.replace('#', ''), 16);
+    }
+
+    // Helper to convert number to hex
+    function numberToHex(num) {
+      return '#' + num.toString(16).padStart(6, '0');
+    }
+
+    // Toggle handlers
+    function setupLightingToggle(toggleId, configKey, defaultValue) {
+      const toggle = document.getElementById(toggleId);
+      if (!toggle) return;
+
+      // Set initial state
+      if (defaultValue) {
+        toggle.classList.add('active');
+      } else {
+        toggle.classList.remove('active');
+      }
+
+      toggle.addEventListener('click', () => {
+        const isActive = toggle.classList.toggle('active');
+        vscode.postMessage({
+          type: 'updateLighting',
+          data: { [configKey]: isActive }
+        });
+      });
+    }
+
+    setupLightingToggle('lighting-enabled', 'enabled', true);
+    setupLightingToggle('lighting-daynight', 'dayNightCycle', true);
+    setupLightingToggle('lighting-agent-torch', 'agentLight', true);
+
+    // Torch radius slider
+    const torchRadiusSlider = document.getElementById('torch-radius');
+    const torchRadiusValue = document.getElementById('torch-radius-value');
+    if (torchRadiusSlider) {
+      torchRadiusSlider.addEventListener('input', () => {
+        const value = parseInt(torchRadiusSlider.value);
+        torchRadiusValue.textContent = value;
+        vscode.postMessage({
+          type: 'updateLighting',
+          data: { agentLightRadius: value }
+        });
+      });
+    }
+
+    // Torch intensity slider
+    const torchIntensitySlider = document.getElementById('torch-intensity');
+    const torchIntensityValue = document.getElementById('torch-intensity-value');
+    if (torchIntensitySlider) {
+      torchIntensitySlider.addEventListener('input', () => {
+        const value = parseInt(torchIntensitySlider.value) / 100;
+        torchIntensityValue.textContent = value.toFixed(2);
+        vscode.postMessage({
+          type: 'updateLighting',
+          data: { agentLightIntensity: value }
+        });
+      });
+    }
+
+    // Torch color picker
+    const torchColorPicker = document.getElementById('torch-color');
+    const torchColorHex = document.getElementById('torch-color-hex');
+    if (torchColorPicker) {
+      torchColorPicker.addEventListener('input', () => {
+        const hex = torchColorPicker.value;
+        torchColorHex.textContent = hex;
+        vscode.postMessage({
+          type: 'updateLighting',
+          data: { agentLightColor: hexToNumber(hex) }
+        });
+      });
+    }
 
     // ─── Message Handling ─────────────────────────────────────────────────
 

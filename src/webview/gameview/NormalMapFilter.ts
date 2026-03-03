@@ -1,26 +1,22 @@
 /**
- * NormalMapFilter - Custom PixiJS filter for dynamic lighting with normal maps
+ * NormalMapFilter - Custom PixiJS filter for dynamic lighting
  *
- * Supports:
- * - Ambient lighting (base illumination)
- * - Directional lighting (sun-like, global direction)
- * - Point lights (torches, agent glow, etc.)
+ * A simplified filter that applies ambient/directional lighting.
+ * Uses PixiJS v8's resources system for uniform binding.
  */
 
-import { Filter, GlProgram, Texture, Shader } from 'pixi.js';
+import { Filter, GlProgram, Texture } from 'pixi.js';
 import { LightingState, PointLight } from './types';
 
-// Fragment shader for normal map lighting
+// Fragment shader for lighting
 const fragmentShader = `
 precision highp float;
 
 in vec2 vTextureCoord;
-in vec2 vWorldCoord;
 
 out vec4 fragColor;
 
 uniform sampler2D uTexture;
-uniform sampler2D uNormalMap;
 uniform float uAmbient;
 uniform vec3 uAmbientColor;
 uniform vec2 uLightDir;
@@ -28,94 +24,87 @@ uniform float uLightIntensity;
 uniform vec3 uLightColor;
 uniform float uEnabled;
 
-// Point light uniforms (max 8 lights)
-uniform vec3 uPointLights[8];     // xyz = position (z = radius)
-uniform vec3 uPointLightColors[8];
-uniform float uPointLightIntensities[8];
-uniform float uNumPointLights;
-
 void main() {
   vec4 diffuse = texture(uTexture, vTextureCoord);
 
-  // If lighting disabled or pixel is transparent, just output diffuse
-  if (uEnabled < 0.5 || diffuse.a < 0.01) {
+  // If pixel is transparent, just output diffuse
+  if (diffuse.a < 0.01) {
     fragColor = diffuse;
     return;
   }
 
-  // Sample normal from normal map
-  // Normal maps store normals in tangent space, RGB -> XYZ where 128 = 0
-  vec3 normal = texture(uNormalMap, vTextureCoord).rgb;
-  // Convert from [0,1] to [-1,1] range
-  normal = normalize(normal * 2.0 - 1.0);
+  // If lighting disabled, just output diffuse
+  if (uEnabled < 0.5) {
+    fragColor = diffuse;
+    return;
+  }
+
+  // Flat surface normal pointing up with slight tilt
+  vec3 normal = normalize(vec3(0.0, 0.3, 0.95));
 
   // Start with ambient light
   vec3 lighting = uAmbientColor * uAmbient;
 
-  // Directional light (sun)
-  // For 2D, we use the x,y components of the normal and light direction
+  // Directional light
   float dirIntensity = max(0.0, dot(normal.xy, uLightDir)) * uLightIntensity;
+
+  // Add brightness-based variation
+  float brightness = (diffuse.r + diffuse.g + diffuse.b) / 3.0;
+  dirIntensity *= 0.7 + brightness * 0.3;
+
   lighting += uLightColor * dirIntensity;
 
-  // Point lights
-  for (int i = 0; i < 8; i++) {
-    if (float(i) >= uNumPointLights) break;
-
-    vec2 lightPos = uPointLights[i].xy;
-    float lightRadius = uPointLights[i].z;
-
-    vec2 toLight = lightPos - vWorldCoord;
-    float dist = length(toLight);
-
-    if (dist < lightRadius) {
-      vec2 lightDir = normalize(toLight);
-
-      // Normal mapping for point light
-      float normalIntensity = max(0.0, dot(normal.xy, lightDir));
-
-      // Distance attenuation (quadratic falloff)
-      float attenuation = 1.0 - (dist / lightRadius);
-      attenuation = attenuation * attenuation;
-
-      float intensity = normalIntensity * attenuation * uPointLightIntensities[i];
-      lighting += uPointLightColors[i] * intensity;
-    }
-  }
-
-  // Apply lighting to diffuse color
+  // Apply lighting
   vec3 finalColor = diffuse.rgb * lighting;
   fragColor = vec4(finalColor, diffuse.a);
 }
 `;
 
-// Vertex shader that passes world coordinates
+// Vertex shader using PixiJS v8 filter helper functions
 const vertexShader = `
 in vec2 aPosition;
-in vec2 aUV;
-
 out vec2 vTextureCoord;
-out vec2 vWorldCoord;
 
-uniform mat3 uProjectionMatrix;
-uniform mat3 uWorldTransformMatrix;
-uniform mat3 uFilterMatrix;
+uniform vec4 uInputSize;
+uniform vec4 uOutputFrame;
+uniform vec4 uOutputTexture;
 
-void main() {
-  vTextureCoord = aUV;
+vec4 filterVertexPosition( void )
+{
+    vec2 position = aPosition * uOutputFrame.zw + uOutputFrame.xy;
 
-  // Calculate world coordinates for point light calculations
-  vec2 filterCoord = aPosition * 0.5 + 0.5;  // Convert to 0-1 range
-  vWorldCoord = (uFilterMatrix * vec3(filterCoord, 1.0)).xy;
+    position.x = position.x * (2.0 / uOutputTexture.x) - 1.0;
+    position.y = position.y * (2.0*uOutputTexture.z / uOutputTexture.y) - uOutputTexture.z;
 
-  gl_Position = vec4(aPosition, 0.0, 1.0);
+    return vec4(position, 0.0, 1.0);
+}
+
+vec2 filterTextureCoord( void )
+{
+    return aPosition * (uOutputFrame.zw * uInputSize.zw);
+}
+
+void main(void)
+{
+    gl_Position = filterVertexPosition();
+    vTextureCoord = filterTextureCoord();
 }
 `;
 
+// Uniforms structure for resources
+interface LightingUniforms {
+  uAmbient: { value: number; type: 'f32' };
+  uAmbientColor: { value: Float32Array; type: 'vec3<f32>' };
+  uLightDir: { value: Float32Array; type: 'vec2<f32>' };
+  uLightIntensity: { value: number; type: 'f32' };
+  uLightColor: { value: Float32Array; type: 'vec3<f32>' };
+  uEnabled: { value: number; type: 'f32' };
+}
+
 export class NormalMapFilter extends Filter {
   private normalMapTexture: Texture | null = null;
+  private hasNormalMap: boolean = false;
   private lightingState: LightingState;
-  private worldScale: number = 1;
-  private worldOffset: { x: number; y: number } = { x: 0, y: 0 };
 
   constructor() {
     // Create the GL program
@@ -124,24 +113,41 @@ export class NormalMapFilter extends Filter {
       fragment: fragmentShader,
     });
 
-    super({ glProgram });
-
-    // Default lighting state
-    this.lightingState = {
+    // Initialize default lighting state
+    const defaultState: LightingState = {
       enabled: true,
-      ambient: 0.3,
+      ambient: 0.5,
       ambientColor: 0xffffff,
       directional: {
         x: 0.5,
         y: -0.7,
-        intensity: 0.7,
+        intensity: 0.5,
         color: 0xfff5e6,
       },
       pointLights: [],
     };
 
-    // Set initial uniform values
-    this.updateUniforms();
+    // Create uniforms with proper PixiJS v8 format
+    const lightingUniforms: LightingUniforms = {
+      uAmbient: { value: defaultState.ambient, type: 'f32' },
+      uAmbientColor: { value: hexToVec3(defaultState.ambientColor), type: 'vec3<f32>' },
+      uLightDir: { value: normalizeVec2(defaultState.directional.x, defaultState.directional.y), type: 'vec2<f32>' },
+      uLightIntensity: { value: defaultState.directional.intensity, type: 'f32' },
+      uLightColor: { value: hexToVec3(defaultState.directional.color), type: 'vec3<f32>' },
+      uEnabled: { value: 1.0, type: 'f32' },
+    };
+
+    // Use resources for uniform binding in PixiJS v8
+    super({
+      glProgram,
+      resources: {
+        lightingUniforms,
+      },
+    });
+
+    this.lightingState = defaultState;
+
+    console.log('[NormalMapFilter] Created with resources');
   }
 
   /**
@@ -149,6 +155,7 @@ export class NormalMapFilter extends Filter {
    */
   setNormalMap(texture: Texture | null): void {
     this.normalMapTexture = texture;
+    this.hasNormalMap = texture !== null;
   }
 
   /**
@@ -156,6 +163,13 @@ export class NormalMapFilter extends Filter {
    */
   getNormalMap(): Texture | null {
     return this.normalMapTexture;
+  }
+
+  /**
+   * Check if a normal map is currently set
+   */
+  hasNormalMapsLoaded(): boolean {
+    return this.hasNormalMap;
   }
 
   /**
@@ -178,27 +192,24 @@ export class NormalMapFilter extends Filter {
    */
   setAmbient(level: number): void {
     this.lightingState.ambient = Math.max(0, Math.min(1, level));
+    (this.resources.lightingUniforms as any).uniforms.uAmbient = this.lightingState.ambient;
   }
 
   /**
    * Set ambient light color (hex)
    */
-  setAmbientColor(color: number): void {
+  setAmbientColor(color: number): void{
     this.lightingState.ambientColor = color;
+    (this.resources.lightingUniforms as any).uniforms.uAmbientColor = hexToVec3(color);
   }
 
   /**
    * Set directional light direction (normalized vector)
    */
   setLightDirection(x: number, y: number): void {
-    // Normalize the direction
-    const len = Math.sqrt(x * x + y * y);
-    if (len > 0) {
-      x /= len;
-      y /= len;
-    }
     this.lightingState.directional.x = x;
     this.lightingState.directional.y = y;
+    (this.resources.lightingUniforms as any).uniforms.uLightDir = normalizeVec2(x, y);
   }
 
   /**
@@ -206,6 +217,7 @@ export class NormalMapFilter extends Filter {
    */
   setLightIntensity(intensity: number): void {
     this.lightingState.directional.intensity = Math.max(0, Math.min(1, intensity));
+    (this.resources.lightingUniforms as any).uniforms.uLightIntensity = this.lightingState.directional.intensity;
   }
 
   /**
@@ -213,19 +225,20 @@ export class NormalMapFilter extends Filter {
    */
   setLightColor(color: number): void {
     this.lightingState.directional.color = color;
+    (this.resources.lightingUniforms as any).uniforms.uLightColor = hexToVec3(color);
   }
 
   /**
    * Set all point lights at once
    */
   setPointLights(lights: PointLight[]): void {
-    this.lightingState.pointLights = lights.slice(0, 8); // Max 8 lights
+    this.lightingState.pointLights = lights.slice(0, 8);
   }
 
   /**
    * Add a single point light
    */
-  addPointLight(light: PointLight): void {
+  addPointLight(light: PointLight): void{
     if (this.lightingState.pointLights.length < 8) {
       this.lightingState.pointLights.push(light);
     }
@@ -234,7 +247,7 @@ export class NormalMapFilter extends Filter {
   /**
    * Remove a point light by ID
    */
-  removePointLight(id: string): void {
+  removePointLight(id: string): void{
     const index = this.lightingState.pointLights.findIndex(l => l.id === id);
     if (index >= 0) {
       this.lightingState.pointLights.splice(index, 1);
@@ -244,7 +257,7 @@ export class NormalMapFilter extends Filter {
   /**
    * Update a specific point light
    */
-  updatePointLight(id: string, updates: Partial<PointLight>): void {
+  updatePointLight(id: string, updates: Partial<PointLight>): void{
     const light = this.lightingState.pointLights.find(l => l.id === id);
     if (light) {
       Object.assign(light, updates);
@@ -254,41 +267,71 @@ export class NormalMapFilter extends Filter {
   /**
    * Clear all point lights
    */
-  clearPointLights(): void {
+  clearPointLights(): void{
     this.lightingState.pointLights = [];
   }
 
   /**
    * Enable or disable the lighting effect
    */
-  setEnabled(enabled: boolean): void {
+  setEnabled(enabled: boolean): void{
     this.lightingState.enabled = enabled;
+    (this.resources.lightingUniforms as any).uniforms.uEnabled = enabled ? 1.0 : 0.0;
+    console.log('[NormalMapFilter] setEnabled:', enabled);
   }
 
   /**
-   * Set world transform for point light coordinate conversion
+   * Check if lighting is enabled
    */
-  setWorldTransform(scale: number, offsetX: number, offsetY: number): void {
-    this.worldScale = scale;
-    this.worldOffset = { x: offsetX, y: offsetY };
+  isEnabled(): boolean {
+    return this.lightingState.enabled;
   }
 
   /**
    * Update all uniforms from current state
    */
-  private updateUniforms(): void {
-    // Uniforms are set via the shader in PixiJS v8
-    // This method exists for compatibility
-  }
+  private updateUniforms(): void{
+    const state = this.lightingState;
+    const uniforms = (this.resources.lightingUniforms as any).uniforms;
 
-  /**
-   * Convert hex color to RGB (0-1 range)
-   */
-  private hexToRgb(hex: number): { r: number; g: number; b: number } {
-    return {
-      r: ((hex >> 16) & 0xff) / 255,
-      g: ((hex >> 8) & 0xff) / 255,
-      b: (hex & 0xff) / 255,
-    };
+    // Update uniform values via resources path
+    uniforms.uAmbient = state.ambient;
+    uniforms.uAmbientColor = hexToVec3(state.ambientColor);
+    uniforms.uLightDir = normalizeVec2(state.directional.x, state.directional.y);
+    uniforms.uLightIntensity = state.directional.intensity;
+    uniforms.uLightColor = hexToVec3(state.directional.color);
+    uniforms.uEnabled = state.enabled ? 1.0 : 0.0;
   }
+}
+
+// ─── Helper Functions ────────────────────────────────────────────────
+
+/**
+ * Convert hex color to RGB (0-1 range)
+ */
+function hexToRgb(hex: number): { r: number; g: number; b: number } {
+  return {
+    r: ((hex >> 16) & 0xff) / 255,
+    g: ((hex >> 8) & 0xff) / 255,
+    b: (hex & 0xff) / 255,
+  };
+}
+
+/**
+ * Convert hex color to Vec3 for shader
+ */
+function hexToVec3(hex: number): Float32Array {
+  const rgb = hexToRgb(hex);
+  return new Float32Array([rgb.r, rgb.g, rgb.b]);
+}
+
+/**
+ * Normalize a 2D vector for shader
+ */
+function normalizeVec2(x: number, y: number): Float32Array {
+  const len = Math.sqrt(x * x + y * y);
+  if (len > 0) {
+    return new Float32Array([x / len, y / len]);
+  }
+  return new Float32Array([x, y]);
 }

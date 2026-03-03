@@ -474,6 +474,12 @@ function setupMessageHandler(): void {
       case 'despawnSubagent':
         engine.despawnSubagent(message.id);
         break;
+
+      case 'updateLighting':
+        if ((renderer as any).updateLightingConfig) {
+          (renderer as any).updateLightingConfig(message.config);
+        }
+        break;
     }
   });
 }

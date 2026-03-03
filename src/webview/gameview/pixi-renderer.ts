@@ -28,7 +28,6 @@ import {
 import { GlowFilter } from 'pixi-filters';
 import { Renderer, WebviewAssetData, Tile, ViewportBounds, TILE_SIZE, LightingState, PointLight } from './types';
 import { TileSpritePool, SpritePool } from './SpritePool';
-import { NormalMapFilter } from './NormalMapFilter';
 import { LightingManager } from './LightingManager';
 
 export class PixiRenderer implements Renderer {
@@ -86,9 +85,9 @@ export class PixiRenderer implements Renderer {
   private lightingOverlay: Graphics | null = null;
   private dayNightEnabled = true;
   private lastLightingUpdate = 0;
+  private lastAmbientValue = -1; // Track last ambient to avoid unnecessary redraws
 
-  // Normal map lighting system
-  private normalMapFilter: NormalMapFilter | null = null;
+  // Lighting system (using graphics overlay due to PixiJS v8 filter bug)
   private lightingManager: LightingManager | null = null;
   private normalMapEnabled = true;
 
@@ -127,10 +126,10 @@ export class PixiRenderer implements Renderer {
       this.worldContainer = new Container();
       stage.addChild(this.worldContainer);
 
-      // Create layer containers with render group optimization
-      this.groundContainer = new Container({ isRenderGroup: true });
-      this.terrainContainer = new Container({ isRenderGroup: true });
-      this.cropsContainer = new Container({ isRenderGroup: true });
+      // Create layer containers (removed isRenderGroup due to filter compatibility issue)
+      this.groundContainer = new Container();
+      this.terrainContainer = new Container();
+      this.cropsContainer = new Container();
       this.charactersContainer = new Container();
       this.effectsContainer = new Container();
 
@@ -370,29 +369,10 @@ export class PixiRenderer implements Renderer {
     this.tilePool.setTextureCache(this.textures);
     console.log('[PixiRenderer] Total textures loaded:', this.textures.size, 'normal maps:', this.normalMapTextures.size);
 
-    // Apply normal map filter to world container if we have normal maps
-    if (this.normalMapTextures.size > 0 && this.worldContainer) {
-      // Lazily create the filter now that we have normal maps
-      if (!this.normalMapFilter) {
-        try {
-          this.normalMapFilter = new NormalMapFilter();
-          console.log('[PixiRenderer] NormalMapFilter created');
-        } catch (error) {
-          console.warn('[PixiRenderer] Failed to create NormalMapFilter:', error);
-          return;
-        }
-      }
-
-      // Set the first normal map as default (we'll use a different approach for multi-sheet)
-      const firstNormalMap = this.normalMapTextures.values().next().value;
-      if (firstNormalMap && this.normalMapFilter) {
-        this.normalMapFilter.setNormalMap(firstNormalMap);
-      }
-
-      // Apply filter to world container
-      this.worldContainer.filters = [this.normalMapFilter];
-      console.log('[PixiRenderer] Normal map lighting enabled');
-    }
+    // NOTE: PixiJS v8 has a bug with filters causing "Cannot read properties of undefined (reading 'push')"
+    // in collectRenderablesWithEffects. Using graphics overlay for lighting instead.
+    // See: https://github.com/pixijs/pixijs/issues/XXXXX
+    console.log('[PixiRenderer] Using graphics overlay for day/night cycle (filters disabled due to PixiJS v8 bug)');
   }
 
   /**
@@ -892,14 +872,44 @@ export class PixiRenderer implements Renderer {
    * Call this once per frame
    */
   updateLighting(): void {
-    if (!this.normalMapFilter || !this.lightingManager) return;
+    if (!this.lightingManager) {
+      return;
+    }
 
     // Update day/night cycle in lighting manager
     this.lightingManager.updateDayNightCycle();
 
-    // Get current lighting state and apply to filter
+    // Get current lighting state
     const state = this.lightingManager.getState();
-    this.normalMapFilter.setLightingState(state);
+
+    // Only redraw if ambient value changed significantly
+    if (Math.abs(state.ambient - this.lastAmbientValue) < 0.01 && this.lastAmbientValue >= 0) {
+      return;
+    }
+    this.lastAmbientValue = state.ambient;
+
+    // Update the lighting overlay based on ambient light level
+    if (this.lightingOverlay && state.enabled) {
+      // Use a large fixed size to cover the viewport
+      const overlaySize = 2000;
+
+      this.lightingOverlay.clear();
+
+      // Calculate overlay alpha based on ambient (lower ambient = darker)
+      const alpha = Math.max(0, (1 - state.ambient) * 0.5);
+
+      if (alpha > 0.01) {
+        // Apply color tint through overlay
+        const ambientRgb = this.hexToRgb(state.ambientColor);
+        const colorR = Math.round(ambientRgb.r * 50); // Dark blue-purple for night
+        const colorG = Math.round(ambientRgb.g * 50);
+        const colorB = Math.round(ambientRgb.b * 100 + 50);
+        const overlayColor = (colorR << 16) | (colorG << 8) | colorB;
+
+        this.lightingOverlay.rect(-overlaySize, -overlaySize, overlaySize * 2, overlaySize * 2);
+        this.lightingOverlay.fill({ color: overlayColor, alpha });
+      }
+    }
   }
 
   /**
@@ -937,8 +947,9 @@ export class PixiRenderer implements Renderer {
     if (this.lightingManager) {
       this.lightingManager.setEnabled(enabled);
     }
-    if (this.normalMapFilter) {
-      this.normalMapFilter.setEnabled(enabled);
+    // Clear overlay when disabled
+    if (!enabled && this.lightingOverlay) {
+      this.lightingOverlay.clear();
     }
   }
 
@@ -954,6 +965,61 @@ export class PixiRenderer implements Renderer {
    */
   hasNormalMaps(): boolean {
     return this.normalMapTextures.size > 0;
+  }
+
+  /**
+   * Update lighting configuration from UI
+   */
+  updateLightingConfig(config: {
+    enabled?: boolean;
+    dayNightCycle?: boolean;
+    agentLight?: boolean;
+    agentLightRadius?: number;
+    agentLightIntensity?: number;
+    agentLightColor?: number;
+  }): void {
+    if (!this.lightingManager) return;
+
+    if (config.enabled !== undefined) {
+      this.normalMapEnabled = config.enabled;
+      this.lightingManager.setEnabled(config.enabled);
+      // Clear overlay when disabled
+      if (!config.enabled && this.lightingOverlay) {
+        this.lightingOverlay.clear();
+      }
+    }
+
+    this.lightingManager.setConfig({
+      dayNightCycle: config.dayNightCycle,
+      agentLight: config.agentLight,
+      agentLightRadius: config.agentLightRadius,
+      agentLightIntensity: config.agentLightIntensity,
+      agentLightColor: config.agentLightColor,
+    });
+  }
+
+  /**
+   * Get current lighting configuration
+   */
+  getLightingConfig(): {
+    enabled: boolean;
+    dayNightCycle: boolean;
+    agentLight: boolean;
+    agentLightRadius: number;
+    agentLightIntensity: number;
+    agentLightColor: number;
+  } | null {
+    if (!this.lightingManager) return null;
+
+    const config = this.lightingManager.getConfig();
+    return {
+      enabled: this.normalMapEnabled,
+      dayNightCycle: config.dayNightCycle,
+      agentLight: config.agentLight,
+      agentLightRadius: config.agentLightRadius,
+      agentLightIntensity: config.agentLightIntensity,
+      agentLightColor: config.agentLightColor,
+    };
   }
 
   dispose(): void {
@@ -988,11 +1054,6 @@ export class PixiRenderer implements Renderer {
     }
     this.normalMapTextures.clear();
 
-    // Clean up normal map filter
-    if (this.normalMapFilter) {
-      this.normalMapFilter.destroy();
-      this.normalMapFilter = null;
-    }
     this.lightingManager = null;
 
     // Clean up text cache
@@ -1095,6 +1156,17 @@ export class PixiRenderer implements Renderer {
    */
   getGlowFilter(): GlowFilter | null {
     return this.activeGlowFilter;
+  }
+
+  /**
+   * Convert hex color to RGB (0-1 range)
+   */
+  private hexToRgb(hex: number): { r: number; g: number; b: number } {
+    return {
+      r: ((hex >> 16) & 0xff) / 255,
+      g: ((hex >> 8) & 0xff) / 255,
+      b: (hex & 0xff) / 255,
+    };
   }
 
   /**

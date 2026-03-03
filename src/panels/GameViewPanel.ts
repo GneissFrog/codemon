@@ -322,6 +322,25 @@ export class GameViewPanel {
   }
 
   /**
+   * Update lighting configuration in the webview
+   */
+  public updateLighting(config: {
+    enabled?: boolean;
+    dayNightCycle?: boolean;
+    agentLight?: boolean;
+    agentLightRadius?: number;
+    agentLightIntensity?: number;
+    agentLightColor?: number;
+  }): void {
+    if (this._panel) {
+      this._panel.webview.postMessage({
+        type: 'updateLighting',
+        config,
+      });
+    }
+  }
+
+  /**
    * Refresh assets from disk and reload in webview
    */
   public async refreshAssets(): Promise<void> {
