@@ -15,11 +15,13 @@ import { getCodebaseMapper } from './core/codebase-mapper';
 import { getHookServer } from './core/hook-server';
 import { getAssetLoader } from './overworld/core/AssetLoader';
 import { SpriteConfigPanel, getSpriteConfigPanel } from './panels/SpriteConfigPanel';
+import { ModuleEditorPanel, getModuleEditorPanel } from './panels/ModuleEditorPanel';
 import { onSettingsChanged, getSettings } from './core/settings';
-import { ActivityEntry, ToolUseEvent } from './core/event-types';
+import { ActivityEntry, ToolUseEvent, SubagentStartEvent, SubagentStopEvent } from './core/event-types';
 import { FileAction } from './core/codebase-mapper';
 import { WorldMap } from './overworld/world/WorldMap';
 import { WorldGenerator } from './overworld/world/WorldGenerator';
+import { getModuleRegistry } from './overworld/modules/ModuleRegistry';
 
 let gameViewPanel: GameViewPanel | undefined;
 let budgetBarPanel: ReturnType<typeof getBudgetBarPanel> | undefined;
@@ -40,8 +42,12 @@ export function activate(context: vscode.ExtensionContext): void {
 
   // Initialize asset loader for overworld sprites (must complete before map updates)
   const assetLoader = getAssetLoader(extensionUri);
-  assetLoader.load().then(() => {
-    console.log('[CodeMon] Assets loaded successfully');
+  const moduleRegistry = getModuleRegistry(extensionUri);
+  Promise.all([
+    assetLoader.load(),
+    moduleRegistry.load(),
+  ]).then(() => {
+    console.log('[CodeMon] Assets and modules loaded successfully');
     // Now that assets are loaded, populate the map
     populateMapFromWorkspace();
   }).catch((err) => {
@@ -59,6 +65,15 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.window.registerWebviewViewProvider(
       SpriteConfigPanel.viewType,
       spriteConfigPanel
+    )
+  );
+
+  // Register module editor panel
+  const moduleEditorPanel = getModuleEditorPanel(extensionUri);
+  context.subscriptions.push(
+    vscode.window.registerWebviewViewProvider(
+      ModuleEditorPanel.viewType,
+      moduleEditorPanel
     )
   );
 
@@ -229,6 +244,23 @@ function setupEventRouting(
       gameViewPanel?.moveAgentToFile(filePath);
     }
   });
+
+  // Route subagent events to spawn/despawn animals on the map
+  let activeSubagentCount = 0;
+  const animalTypes = ['chicken', 'cow', 'pig', 'duck'];
+
+  eventRouter.on(ROUTER_EVENTS.SUBAGENT_START, (event: SubagentStartEvent) => {
+    const animalType = animalTypes[activeSubagentCount % animalTypes.length];
+    activeSubagentCount++;
+    console.log(`[CodeMon] Subagent start: ${event.subagentId} → spawning ${animalType}`);
+    gameViewPanel?.spawnSubagent(event.subagentId, animalType);
+  });
+
+  eventRouter.on(ROUTER_EVENTS.SUBAGENT_STOP, (event: SubagentStopEvent) => {
+    activeSubagentCount = Math.max(0, activeSubagentCount - 1);
+    console.log(`[CodeMon] Subagent stop: ${event.subagentId}`);
+    gameViewPanel?.despawnSubagent(event.subagentId);
+  });
 }
 
 /**
@@ -245,7 +277,8 @@ function sendMapUpdate(): void {
     worldMap = new WorldMap(100, 100);
   }
   if (!worldGenerator) {
-    worldGenerator = new WorldGenerator(worldMap);
+    const moduleRegistry = getModuleRegistry();
+    worldGenerator = new WorldGenerator(worldMap, {}, moduleRegistry);
   }
 
   worldGenerator.generateFromLayout(layout);

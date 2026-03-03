@@ -58,6 +58,11 @@
           "type": "webview",
           "id": "codemon.spriteConfig",
           "name": "Sprite Configuration"
+        },
+        {
+          "type": "webview",
+          "id": "codemon.moduleEditor",
+          "name": "Module Editor"
         }
       ]
     },

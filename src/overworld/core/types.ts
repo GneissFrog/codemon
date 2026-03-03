@@ -115,7 +115,120 @@ export interface Plot {
   cropType: string;
   growthStage: number;
   activity: number;
+  isActive: boolean;     // Currently being accessed (decays after 3s)
   cropSpriteId: string;  // Pre-computed sprite for this plot's crop
+}
+
+// ─── Tile Module Types ────────────────────────────────────────────────────
+
+export type ModuleCategory =
+  | 'environment'    // Ponds, clearings, groves
+  | 'connector'      // Bridges, crossroads, path features
+  | 'decorative'     // Vignettes, arrangements
+  | 'landmark';      // Points of interest, unique features
+
+export type ConnectionType = 'path' | 'grass' | 'water' | 'fence' | 'any';
+
+export type PlacementAffinity =
+  | 'any'            // No preference
+  | 'edge'           // Prefers world edges
+  | 'center'         // Prefers world center
+  | 'near-water'     // Prefers proximity to water
+  | 'near-path'      // Prefers proximity to paths
+  | 'corner'         // Prefers world corners
+  | 'between-plots'; // Prefers gaps between directory plots
+
+export interface ModuleTilePlacement {
+  x: number;          // Offset from module origin (0,0)
+  y: number;
+  layer: number;      // 0=ground, 1=terrain, 2=objects/crops
+  type: TileType;
+  spriteId: string;
+}
+
+export interface ConnectionPoint {
+  x: number;          // Position on module edge
+  y: number;
+  edge: 'north' | 'south' | 'east' | 'west';
+  type: ConnectionType;
+  required: boolean;  // Must this connection be satisfied?
+}
+
+export interface PlacementRules {
+  minDistFromPlots: number;    // Minimum tiles from any directory plot
+  minDistFromSame: number;     // Minimum tiles from same module type
+  minDistFromAny: number;      // Minimum tiles from any other module
+  affinity: PlacementAffinity;
+  allowOverlapWater: boolean;
+  allowOverlapDecorations: boolean;
+  requiresGrass: boolean;      // Must footprint be entirely on grass?
+}
+
+/** A pre-designed, modular tile arrangement placed by the generator */
+export interface TileModuleDef {
+  id: string;
+  name: string;
+  category: ModuleCategory;
+  width: number;
+  height: number;
+  tiles: ModuleTilePlacement[];
+  connectionPoints: ConnectionPoint[];
+  placement: PlacementRules;
+  tags: string[];
+  rarity: number;          // 0.0-1.0, probability weight
+  minWorldArea: number;    // Minimum world area (tiles^2) to appear
+  maxInstances: number;    // Maximum copies per world (-1 = unlimited)
+}
+
+/** ASCII shorthand legend entry for module authoring */
+export interface AsciiLegendEntry {
+  type: TileType;
+  spriteId: string;
+  layer?: number;          // Default: 2 (objects) for single-layer maps
+}
+
+/** Single-layer ASCII module format */
+export interface AsciiModuleFormat {
+  id: string;
+  name: string;
+  category: ModuleCategory;
+  asciiMap: string[];
+  legend: Record<string, AsciiLegendEntry>;
+  connectionPoints?: ConnectionPoint[];
+  placement?: Partial<PlacementRules>;
+  tags?: string[];
+  rarity?: number;
+  minWorldArea?: number;
+  maxInstances?: number;
+}
+
+/** Multi-layer ASCII module format */
+export interface AsciiLayerDef {
+  layer: number;
+  asciiMap: string[];
+  legend: Record<string, AsciiLegendEntry>;
+}
+
+export interface MultiLayerAsciiModuleFormat {
+  id: string;
+  name: string;
+  category: ModuleCategory;
+  layers: AsciiLayerDef[];
+  connectionPoints?: ConnectionPoint[];
+  placement?: Partial<PlacementRules>;
+  tags?: string[];
+  rarity?: number;
+  minWorldArea?: number;
+  maxInstances?: number;
+}
+
+/** Record of a module that was placed in the world */
+export interface PlacedModuleInfo {
+  moduleId: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
 }
 
 // ─── Serialization Types ──────────────────────────────────────────────────
@@ -125,6 +238,7 @@ export interface SerializedWorldMap {
   plots: Plot[];
   width: number;
   height: number;
+  modules?: PlacedModuleInfo[];  // Placed module metadata for debug/hover
 }
 
 // ─── Entity Types ──────────────────────────────────────────────────────────

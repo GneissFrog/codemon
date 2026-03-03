@@ -4,15 +4,17 @@
  * Converts the treemap-style layout into a tile-based farm with:
  * - Noise-based grass ground with organic variation
  * - Fenced plots for directories with spacing and jitter
- * - Crops for files
+ * - Crops for files placed INSIDE their parent directory plots
  * - MST-connected path network with auto-tiling and gates
  * - Clustered contextual decorations
  * - Multiple organic water features
  */
 
 import { WorldMap } from './WorldMap';
-import { TileType, Plot } from '../core/types';
+import { TileType, Plot, PlacedModuleInfo } from '../core/types';
 import { FileNode, MapLayout, MapTile } from '../../core/codebase-mapper';
+import { ModuleRegistry } from '../modules/ModuleRegistry';
+import { placeModules, PlacerContext } from '../modules/ModulePlacer';
 
 interface LayoutNode {
   node: FileNode;
@@ -43,6 +45,15 @@ const DEFAULT_CONFIG: GeneratorConfig = {
 const LAYER_GROUND = 0;
 const LAYER_TERRAIN = 1;
 const LAYER_CROPS = 2;
+
+// ─── World Bounds ─────────────────────────────────────────────────────────────
+
+interface WorldBounds {
+  minX: number;
+  minY: number;
+  maxX: number;
+  maxY: number;
+}
 
 // ─── Noise Utilities ──────────────────────────────────────────────────────────
 
@@ -162,10 +173,13 @@ export class WorldGenerator {
   private map: WorldMap;
   private config: GeneratorConfig;
   private fileExtensionToCrop: Map<string, string>;
+  private moduleRegistry: ModuleRegistry | null;
+  private placedModules: PlacedModuleInfo[] = [];
 
-  constructor(map: WorldMap, config: Partial<GeneratorConfig> = {}) {
+  constructor(map: WorldMap, config: Partial<GeneratorConfig> = {}, moduleRegistry?: ModuleRegistry) {
     this.map = map;
     this.config = { ...DEFAULT_CONFIG, ...config };
+    this.moduleRegistry = moduleRegistry ?? null;
 
     // Map file extensions to crop types
     this.fileExtensionToCrop = new Map([
@@ -208,48 +222,126 @@ export class WorldGenerator {
   }
 
   /**
-   * Generate world from existing treemap layout
+   * Generate world from existing treemap layout.
+   *
+   * Key fix: files are placed INSIDE their parent directory's plot (after
+   * jitter + constraint relaxation), and ground is filled AFTER plot positions
+   * are finalized so grass always covers the entire world.
    */
   generateFromLayout(layout: MapLayout): void {
     // Clear existing
     this.map.clearTiles();
 
-    // Fill ground with noise-based grass
-    this.fillGround(layout.width, layout.height);
-
-    // Collect and refine plot positions before placing
-    const dirTiles = layout.tiles.filter(t => t.isDir);
+    // Separate directory and file tiles (skip root directory at depth 0)
+    const dirTiles = layout.tiles.filter(t => t.isDir && t.depth > 0);
     const fileTiles = layout.tiles.filter(t => !t.isDir);
+
+    // 1. Compute directory plot rects (jitter + relax + normalize)
     const plotRects = this.computePlotRects(dirTiles);
 
-    // Place directory plots with refined spacing
+    // 2. Compute raw world bounds, then normalize to 0-based coordinates
+    //    This ensures all tile positions are non-negative, which simplifies
+    //    the webview rendering transform.
+    const rawBounds = this.computeWorldBounds(plotRects);
+    const offsetX = -rawBounds.minX;
+    const offsetY = -rawBounds.minY;
+
+    // Shift all plot rects so the world starts at (0, 0)
+    for (const rect of plotRects) {
+      rect.x += offsetX;
+      rect.y += offsetY;
+    }
+
+    const bounds: WorldBounds = {
+      minX: 0,
+      minY: 0,
+      maxX: rawBounds.maxX + offsetX,
+      maxY: rawBounds.maxY + offsetY,
+    };
+
+    // 3. Build lookup: directory path → PlotRect
+    const dirLookup = new Map<string, PlotRect>();
+    for (const rect of plotRects) {
+      const dirPath = rect.tile.node?.path || '';
+      dirLookup.set(dirPath, rect);
+    }
+
+    // 4. Update map dimensions to match world (tile units)
+    this.map.setDimensions(bounds.maxX, bounds.maxY);
+
+    // 5. Fill ground AFTER plots are positioned (so grass covers everything)
+    this.fillGround(bounds);
+
+    // 6. Place directory plots (fences + tilled dirt)
     for (const rect of plotRects) {
       this.createDirectoryPlotFromRect(rect);
     }
 
-    // Place file crops
-    for (const tile of fileTiles) {
-      this.createFilePlot(tile);
+    // 7. Place file crops INSIDE their parent directory plots
+    this.placeFileCropsInDirectories(fileTiles, dirLookup, bounds);
+
+    // 8. Place pre-designed tile modules (ponds, decorative vignettes, landmarks)
+    if (this.moduleRegistry && this.moduleRegistry.size > 0) {
+      const placerCtx: PlacerContext = {
+        map: this.map,
+        worldWidth: bounds.maxX - bounds.minX,
+        worldHeight: bounds.maxY - bounds.minY,
+        plots: plotRects.map(r => ({ x: r.x, y: r.y, width: r.width, height: r.height })),
+        pathCount: plotRects.length, // Approximate: paths ~= plot count before MST
+      };
+      this.placedModules = placeModules(this.moduleRegistry, placerCtx);
     }
 
-    // Post-processing
-    this.generateWater(layout.width, layout.height);
+    // 9. Post-processing (all use world bounds)
+    this.generateWater(bounds);
     this.generatePaths();
     this.placeFenceGates();
     this.autoTileGrassEdges();
-    this.placeDecorations(layout.width, layout.height);
+    this.placeDecorations(bounds);
+  }
+
+  /** Get modules placed during the last generation */
+  getPlacedModules(): PlacedModuleInfo[] {
+    return this.placedModules;
+  }
+
+  // ─── World Bounds ──────────────────────────────────────────────────────────
+
+  /**
+   * Compute actual tile extents from all plot rects, with generous grass margin.
+   */
+  private computeWorldBounds(plotRects: PlotRect[]): WorldBounds {
+    if (plotRects.length === 0) {
+      return { minX: -5, minY: -5, maxX: 35, maxY: 35 };
+    }
+
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const rect of plotRects) {
+      minX = Math.min(minX, rect.x - 2); // -2 for fence + margin
+      minY = Math.min(minY, rect.y - 2);
+      maxX = Math.max(maxX, rect.x + rect.width + 2);
+      maxY = Math.max(maxY, rect.y + rect.height + 2);
+    }
+
+    // Add generous grass margin around all plots
+    const margin = 6;
+    return {
+      minX: minX - margin,
+      minY: minY - margin,
+      maxX: maxX + margin,
+      maxY: maxY + margin,
+    };
   }
 
   // ─── Ground Generation ────────────────────────────────────────────────────
 
   /**
    * Fill the ground layer with noise-based grass variation
+   * Uses actual world bounds so grass always covers all content.
    */
-  private fillGround(width: number, height: number): void {
-    const tileCount = Math.ceil(Math.max(width, height) / 16) + 10;
-
-    for (let y = -5; y < tileCount; y++) {
-      for (let x = -5; x < tileCount; x++) {
+  private fillGround(bounds: WorldBounds): void {
+    for (let y = bounds.minY; y <= bounds.maxY; y++) {
+      for (let x = bounds.minX; x <= bounds.maxX; x++) {
         // Two-octave noise for organic grass variation
         const n = fbmNoise(x * 0.15, y * 0.15, 2);
 
@@ -278,17 +370,24 @@ export class WorldGenerator {
   // ─── Plot Spacing & Jitter ──────────────────────────────────────────────
 
   /**
-   * Convert MapTiles to plot rectangles with spacing enforcement and jitter
+   * Convert MapTiles to plot rectangles with spacing enforcement and jitter.
+   * Enforces both min AND max plot dimensions.
    */
   private computePlotRects(dirTiles: MapTile[]): PlotRect[] {
     if (dirTiles.length === 0) return [];
 
-    // Convert pixel coordinates to tile rectangles
+    // Convert pixel coordinates to tile rectangles, clamping to min/max
     const rects: PlotRect[] = dirTiles.map(tile => {
       const x = Math.floor(tile.x / 16);
       const y = Math.floor(tile.y / 16);
-      const width = Math.max(this.config.minPlotWidth, Math.ceil(tile.width / 16));
-      const height = Math.max(this.config.minPlotHeight, Math.ceil(tile.height / 16));
+      const width = Math.min(
+        this.config.maxPlotWidth,
+        Math.max(this.config.minPlotWidth, Math.ceil(tile.width / 16))
+      );
+      const height = Math.min(
+        this.config.maxPlotHeight,
+        Math.max(this.config.minPlotHeight, Math.ceil(tile.height / 16))
+      );
 
       return { x, y, width, height, tile, depth: tile.depth };
     });
@@ -302,43 +401,47 @@ export class WorldGenerator {
     }
 
     // Constraint relaxation: push overlapping/too-close plots apart
-    const padding = this.config.padding + 2; // Include fence border space
-    for (let iter = 0; iter < 5; iter++) {
+    // Minimum gap between plot interiors = 3 tiles
+    // (1 tile fence-A + 1 tile grass/path + 1 tile fence-B)
+    const minGap = 3;
+
+    for (let iter = 0; iter < 15; iter++) {
       let anyMoved = false;
       for (let i = 0; i < rects.length; i++) {
         for (let j = i + 1; j < rects.length; j++) {
           const a = rects[i];
           const b = rects[j];
 
-          // Check overlap including padding (fence border needs 1 tile each side)
-          const overlapX = (a.x - padding) < (b.x + b.width + padding) &&
-                           (a.x + a.width + padding) > (b.x - padding);
-          const overlapY = (a.y - padding) < (b.y + b.height + padding) &&
-                           (a.y + a.height + padding) > (b.y - padding);
+          // Compute the gap between plot edges on each axis
+          // Positive = separated, negative = overlapping
+          const hGap = Math.max(b.x - (a.x + a.width), a.x - (b.x + b.width));
+          const vGap = Math.max(b.y - (a.y + a.height), a.y - (b.y + b.height));
 
-          if (overlapX && overlapY) {
-            // Push apart along the axis with least overlap
-            const aCenterX = a.x + a.width / 2;
-            const aCenterY = a.y + a.height / 2;
-            const bCenterX = b.x + b.width / 2;
-            const bCenterY = b.y + b.height / 2;
+          // If separated on either axis by >= minGap, no conflict
+          if (hGap >= minGap || vGap >= minGap) continue;
 
-            const dx = bCenterX - aCenterX;
-            const dy = bCenterY - aCenterY;
+          // Both axes within minGap — push apart on the axis with least overlap
+          const aCenterX = a.x + a.width / 2;
+          const aCenterY = a.y + a.height / 2;
+          const bCenterX = b.x + b.width / 2;
+          const bCenterY = b.y + b.height / 2;
+          const dx = bCenterX - aCenterX;
+          const dy = bCenterY - aCenterY;
 
-            if (Math.abs(dx) >= Math.abs(dy)) {
-              // Push horizontally
-              const push = dx >= 0 ? 1 : -1;
-              a.x -= push;
-              b.x += push;
-            } else {
-              // Push vertically
-              const push = dy >= 0 ? 1 : -1;
-              a.y -= push;
-              b.y += push;
-            }
-            anyMoved = true;
+          if (Math.abs(dx) >= Math.abs(dy)) {
+            // Push horizontally — proportional to the deficit
+            const neededPush = Math.max(1, Math.ceil((minGap - hGap) / 2));
+            const dir = dx >= 0 ? 1 : -1;
+            a.x -= dir * neededPush;
+            b.x += dir * neededPush;
+          } else {
+            // Push vertically — proportional to the deficit
+            const neededPush = Math.max(1, Math.ceil((minGap - vGap) / 2));
+            const dir = dy >= 0 ? 1 : -1;
+            a.y -= dir * neededPush;
+            b.y += dir * neededPush;
           }
+          anyMoved = true;
         }
       }
       if (!anyMoved) break;
@@ -385,21 +488,142 @@ export class WorldGenerator {
       cropType: 'directory',
       growthStage: 0,
       activity: 0,
+      isActive: false,
       cropSpriteId: '',
     };
     this.map.addPlot(plot);
   }
 
-  /**
-   * Create a crop plot for a file
-   */
-  private createFilePlot(tile: MapTile): void {
-    const x = Math.floor(tile.x / 16);
-    const y = Math.floor(tile.y / 16);
+  // ─── File → Directory Crop Placement ───────────────────────────────────────
 
+  /**
+   * Place file crops inside their parent directory plots.
+   * Groups files by parent directory and lays them out in a grid
+   * within the fenced area.
+   */
+  private placeFileCropsInDirectories(
+    fileTiles: MapTile[],
+    dirLookup: Map<string, PlotRect>,
+    bounds: WorldBounds
+  ): void {
+    // Group files by their parent directory
+    const filesByDir = new Map<string, MapTile[]>();
+    const orphanFiles: MapTile[] = [];
+
+    for (const tile of fileTiles) {
+      const filePath = tile.node?.path || '';
+      const parentDir = this.getParentDirectory(filePath);
+      const dirRect = this.findParentPlotRect(parentDir, dirLookup);
+
+      if (dirRect) {
+        const dirPath = dirRect.tile.node?.path || '';
+        if (!filesByDir.has(dirPath)) {
+          filesByDir.set(dirPath, []);
+        }
+        filesByDir.get(dirPath)!.push(tile);
+      } else {
+        // No parent directory found — orphan (root-level file)
+        orphanFiles.push(tile);
+      }
+    }
+
+    // For each directory, lay out its files in a grid inside the plot
+    for (const [dirPath, files] of filesByDir) {
+      const rect = dirLookup.get(dirPath);
+      if (!rect) continue;
+      this.placeFilesInPlotGrid(files, rect);
+    }
+
+    // Place orphan files (root-level) as standalone crops on the grass
+    this.placeOrphanFiles(orphanFiles, bounds);
+  }
+
+  /**
+   * Get the parent directory path from a file path.
+   * "src/core/types.ts" → "src/core"
+   * "package.json" → ""
+   */
+  private getParentDirectory(filePath: string): string {
+    const lastSlash = filePath.lastIndexOf('/');
+    return lastSlash > 0 ? filePath.substring(0, lastSlash) : '';
+  }
+
+  /**
+   * Walk up the path hierarchy to find the deepest matching PlotRect.
+   * "src/core/utils" tries: "src/core/utils" → "src/core" → "src"
+   */
+  private findParentPlotRect(dirPath: string, lookup: Map<string, PlotRect>): PlotRect | null {
+    let current = dirPath;
+    while (current) {
+      if (lookup.has(current)) {
+        return lookup.get(current)!;
+      }
+      const lastSlash = current.lastIndexOf('/');
+      current = lastSlash > 0 ? current.substring(0, lastSlash) : '';
+    }
+    // Try root
+    if (lookup.has('')) {
+      return lookup.get('')!;
+    }
+    return null;
+  }
+
+  /**
+   * Lay out files as crop tiles in a grid inside a directory plot.
+   * Uses interior tiles (1 tile inset from edges for tilled dirt borders).
+   */
+  private placeFilesInPlotGrid(files: MapTile[], rect: PlotRect): void {
+    const { x: startX, y: startY, width, height } = rect;
+
+    // Interior area for crops (leave 1 tile border for tilled dirt edge sprites)
+    const interiorX = startX + 1;
+    const interiorY = startY + 1;
+    const interiorW = Math.max(1, width - 2);
+    const interiorH = Math.max(1, height - 2);
+
+    const maxSlots = interiorW * interiorH;
+    const filesToPlace = files.slice(0, maxSlots);
+
+    for (let i = 0; i < filesToPlace.length; i++) {
+      const col = i % interiorW;
+      const row = Math.floor(i / interiorW);
+      if (row >= interiorH) break;
+
+      const tileX = interiorX + col;
+      const tileY = interiorY + row;
+
+      this.createFilePlotAt(filesToPlace[i], tileX, tileY);
+    }
+  }
+
+  /**
+   * Place orphan files (no parent directory plot) on the grass.
+   * Creates a row of crops along the bottom of the world.
+   */
+  private placeOrphanFiles(files: MapTile[], bounds: WorldBounds): void {
+    if (files.length === 0) return;
+
+    // Place in a row at the top-left area of the world
+    const startX = bounds.minX + 2;
+    const startY = bounds.minY + 2;
+    const maxCols = Math.min(files.length, bounds.maxX - bounds.minX - 4);
+
+    for (let i = 0; i < files.length && i < maxCols; i++) {
+      this.createFilePlotAt(files[i], startX + i, startY);
+    }
+  }
+
+  /**
+   * Create a crop plot for a file at a specific tile coordinate.
+   */
+  private createFilePlotAt(tile: MapTile, x: number, y: number): void {
     const cropType = this.getCropType(tile.node?.name || '');
-    const activity = (tile.node?.readCount || 0) + (tile.node?.writeCount || 0);
-    const growthStage = Math.min(3, Math.floor(activity / 2));
+    const readCount = tile.node?.readCount || 0;
+    const writeCount = tile.node?.writeCount || 0;
+    const activity = readCount + writeCount;
+    // Writes count 3× more — actively-edited files grow faster
+    const weightedActivity = readCount + writeCount * 3;
+    const growthStage = Math.min(3, Math.floor(Math.sqrt(weightedActivity)));
 
     // Create plot record with pre-computed crop sprite
     const plot: Plot = {
@@ -413,6 +637,7 @@ export class WorldGenerator {
       cropType,
       growthStage,
       activity,
+      isActive: tile.node?.isActive || false,
       cropSpriteId: '',
     };
     plot.cropSpriteId = this.getCropSprite(plot);
@@ -518,9 +743,11 @@ export class WorldGenerator {
   /**
    * Generate 1-3 organic water features in open areas
    */
-  private generateWater(width: number, height: number): void {
-    const maxTileX = Math.ceil(width / 16) + 4;
-    const maxTileY = Math.ceil(height / 16) + 4;
+  private generateWater(bounds: WorldBounds): void {
+    const maxTileX = bounds.maxX;
+    const maxTileY = bounds.maxY;
+    const minTileX = bounds.minX;
+    const minTileY = bounds.minY;
 
     // Score macro cells to find open areas far from plots
     const cellSize = 6;
@@ -534,8 +761,8 @@ export class WorldGenerator {
 
     const candidates: PondCandidate[] = [];
 
-    for (let cy = 2; cy < maxTileY - 2; cy += cellSize) {
-      for (let cx = 2; cx < maxTileX - 2; cx += cellSize) {
+    for (let cy = minTileY + 2; cy < maxTileY - 2; cy += cellSize) {
+      for (let cx = minTileX + 2; cx < maxTileX - 2; cx += cellSize) {
         // Score = minimum distance to any plot
         let minDist = Infinity;
         for (const plot of plots) {
@@ -552,7 +779,9 @@ export class WorldGenerator {
     candidates.sort((a, b) => b.score - a.score);
 
     // Place 1-3 ponds depending on world size
-    const worldArea = maxTileX * maxTileY;
+    const worldWidth = maxTileX - minTileX;
+    const worldHeight = maxTileY - minTileY;
+    const worldArea = worldWidth * worldHeight;
     const pondCount = worldArea > 1500 ? 3 : worldArea > 600 ? 2 : 1;
     const pondMinSeparation = 8;
 
@@ -576,10 +805,10 @@ export class WorldGenerator {
       placedPonds.push({ cx: candidate.cx, cy: candidate.cy });
     }
 
-    // Fallback: if no good candidates, place one in the bottom-right
+    // Fallback: if no good candidates, place one near the edge
     if (placedPonds.length === 0) {
-      const pondCenterX = Math.floor(maxTileX * 0.85);
-      const pondCenterY = Math.floor(maxTileY * 0.8);
+      const pondCenterX = Math.floor(minTileX + worldWidth * 0.85);
+      const pondCenterY = Math.floor(minTileY + worldHeight * 0.8);
       this.placeOrganicPond(pondCenterX, pondCenterY, 2);
     }
   }
@@ -839,9 +1068,7 @@ export class WorldGenerator {
   /**
    * Place decorations with contextual clustering.
    */
-  private placeDecorations(width: number, height: number): void {
-    const tileCount = Math.ceil(Math.max(width, height) / 16) + 5;
-
+  private placeDecorations(bounds: WorldBounds): void {
     // Collect contextual info for clustering
     const waterPositions = new Set<string>();
     const pathPositions = new Set<string>();
@@ -866,15 +1093,21 @@ export class WorldGenerator {
     }
 
     // Find 2-3 mushroom clusters near world borders
+    const worldWidth = bounds.maxX - bounds.minX;
+    const worldHeight = bounds.maxY - bounds.minY;
     for (let i = 0; i < 3; i++) {
       const h = intHash(i * 7919 + 42);
-      const edgeX = (h % 2 === 0) ? ((h >> 4) % 4) : tileCount - 3 + ((h >> 4) % 3);
-      const edgeY = (h % 3 === 0) ? ((h >> 8) % 4) : tileCount - 3 + ((h >> 8) % 3);
+      const edgeX = (h % 2 === 0)
+        ? bounds.minX + ((h >> 4) % 4)
+        : bounds.maxX - 3 + ((h >> 4) % 3);
+      const edgeY = (h % 3 === 0)
+        ? bounds.minY + ((h >> 8) % 4)
+        : bounds.maxY - 3 + ((h >> 8) % 3);
       mushroomSeeds.push({ x: edgeX, y: edgeY });
     }
 
-    for (let y = -3; y < tileCount; y++) {
-      for (let x = -3; x < tileCount; x++) {
+    for (let y = bounds.minY; y <= bounds.maxY; y++) {
+      for (let x = bounds.minX; x <= bounds.maxX; x++) {
         // Only place on open grass tiles
         const groundTile = this.map.getTile(x, y, LAYER_GROUND);
         const terrainTile = this.map.getTile(x, y, LAYER_TERRAIN);

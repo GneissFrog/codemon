@@ -1,0 +1,190 @@
+{
+  "version": 1,
+  "modules": [
+    {
+      "id": "mushroom-fairy-ring",
+      "name": "Mushroom Fairy Ring",
+      "category": "decorative",
+      "asciiMap": [
+        ".r.b.",
+        "b...r",
+        "..s..",
+        "r...b",
+        ".b.r."
+      ],
+      "legend": {
+        "r": { "type": "decoration", "spriteId": "biome/mushroom-red", "layer": 2 },
+        "b": { "type": "decoration", "spriteId": "biome/mushroom-brown", "layer": 2 },
+        "s": { "type": "decoration", "spriteId": "biome/rock-small", "layer": 2 }
+      },
+      "placement": {
+        "minDistFromPlots": 3,
+        "minDistFromSame": 15,
+        "minDistFromAny": 5,
+        "affinity": "edge",
+        "requiresGrass": true
+      },
+      "tags": ["mushroom", "natural", "forest"],
+      "rarity": 0.7,
+      "minWorldArea": 400,
+      "maxInstances": 2
+    },
+    {
+      "id": "stone-circle",
+      "name": "Stone Circle",
+      "category": "decorative",
+      "asciiMap": [
+        ".L.L.",
+        "s...s",
+        ".s.s.",
+        "L...L",
+        ".s.s."
+      ],
+      "legend": {
+        "L": { "type": "decoration", "spriteId": "biome/rock-large", "layer": 2 },
+        "s": { "type": "decoration", "spriteId": "biome/rock-small", "layer": 2 }
+      },
+      "placement": {
+        "minDistFromPlots": 4,
+        "minDistFromSame": 20,
+        "minDistFromAny": 5,
+        "affinity": "between-plots",
+        "requiresGrass": true
+      },
+      "tags": ["stone", "natural"],
+      "rarity": 0.5,
+      "minWorldArea": 600,
+      "maxInstances": 1
+    },
+    {
+      "id": "flower-garden-small",
+      "name": "Small Flower Garden",
+      "category": "decorative",
+      "layers": [
+        {
+          "layer": 0,
+          "asciiMap": [
+            "....",
+            ".gg.",
+            ".gg.",
+            "...."
+          ],
+          "legend": {
+            "g": { "type": "grass", "spriteId": "grass/grass-var2" }
+          }
+        },
+        {
+          "layer": 2,
+          "asciiMap": [
+            ".sf.",
+            "f..s",
+            "s..f",
+            ".fs."
+          ],
+          "legend": {
+            "f": { "type": "decoration", "spriteId": "biome/flower-small" },
+            "s": { "type": "decoration", "spriteId": "biome/sunflower" }
+          }
+        }
+      ],
+      "connectionPoints": [
+        { "x": 1, "y": 3, "edge": "south", "type": "path", "required": false }
+      ],
+      "placement": {
+        "minDistFromPlots": 2,
+        "minDistFromSame": 12,
+        "minDistFromAny": 4,
+        "affinity": "near-path",
+        "requiresGrass": true
+      },
+      "tags": ["flower", "garden", "decorative"],
+      "rarity": 0.8,
+      "minWorldArea": 300,
+      "maxInstances": 3
+    },
+    {
+      "id": "pond-lily-small",
+      "name": "Small Lily Pond",
+      "category": "environment",
+      "layers": [
+        {
+          "layer": 0,
+          "asciiMap": [
+            "..ww..",
+            ".wwww.",
+            "wwwwww",
+            ".wwww.",
+            "..ww.."
+          ],
+          "legend": {
+            "w": { "type": "water", "spriteId": "water/water-0" }
+          }
+        },
+        {
+          "layer": 2,
+          "asciiMap": [
+            "......",
+            "..f...",
+            ".s..f.",
+            "....s.",
+            "......"
+          ],
+          "legend": {
+            "f": { "type": "decoration", "spriteId": "biome/flower-small" },
+            "s": { "type": "decoration", "spriteId": "biome/rock-small" }
+          }
+        }
+      ],
+      "connectionPoints": [
+        { "x": 3, "y": 4, "edge": "south", "type": "path", "required": false },
+        { "x": 0, "y": 2, "edge": "west", "type": "grass", "required": false }
+      ],
+      "placement": {
+        "minDistFromPlots": 4,
+        "minDistFromSame": 15,
+        "minDistFromAny": 6,
+        "affinity": "any",
+        "allowOverlapWater": true,
+        "requiresGrass": false
+      },
+      "tags": ["water", "pond", "natural"],
+      "rarity": 0.6,
+      "minWorldArea": 500,
+      "maxInstances": 2
+    },
+    {
+      "id": "berry-patch",
+      "name": "Berry Patch",
+      "category": "decorative",
+      "layers": [
+        {
+          "layer": 2,
+          "asciiMap": [
+            "r.g.",
+            ".rg.",
+            "g.r.",
+            ".g.r"
+          ],
+          "legend": {
+            "r": { "type": "decoration", "spriteId": "biome/berry-red" },
+            "g": { "type": "decoration", "spriteId": "biome/berry-green" }
+          }
+        }
+      ],
+      "connectionPoints": [
+        { "x": 0, "y": 3, "edge": "south", "type": "grass", "required": false }
+      ],
+      "placement": {
+        "minDistFromPlots": 2,
+        "minDistFromSame": 10,
+        "minDistFromAny": 4,
+        "affinity": "near-path",
+        "requiresGrass": true
+      },
+      "tags": ["berry", "food", "natural"],
+      "rarity": 0.7,
+      "minWorldArea": 300,
+      "maxInstances": 3
+    }
+  ]
+}
