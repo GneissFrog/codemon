@@ -232,6 +232,10 @@ export class TerrainConfigPanel implements vscode.WebviewViewProvider {
         mappings: Object.fromEntries(this._mappings)
       }, null, 2);
       await vscode.workspace.fs.writeFile(mappingsPath, Buffer.from(content, 'utf-8'));
+
+      // Auto-generate bitmask config so test canvas sees changes immediately
+      await this._generateBitmaskConfig(data.terrainType);
+
       this._view?.webview.postMessage({ type: 'saveSuccess' });
     } catch (e) {
       console.error('[TerrainConfigPanel] Failed to save mappings:', e);
@@ -787,10 +791,11 @@ export class TerrainConfigPanel implements vscode.WebviewViewProvider {
       <label>Brush:</label>
       <select id="paint-terrain"></select>
       <button id="btn-clear-test">Clear</button>
-      <span class="test-hint">Click to paint, right-click to erase</span>
+      <span class="test-hint">Click to paint, right-click to erase, double-click to inspect</span>
     </div>
     <div class="test-canvas-wrapper">
       <canvas id="test-canvas" width="320" height="320"></canvas>
+      <div id="test-tooltip" class="test-tooltip" style="display:none;"></div>
     </div>
   </div>
 
@@ -834,6 +839,11 @@ export class TerrainConfigPanel implements vscode.WebviewViewProvider {
     let testCanvas, testCtx;
     let cachedSpritesheetImages = {};
     let isPainting = false;
+
+    // Highlight state for inspecting painted cells
+    let highlightedZoneIndex = -1;
+    let highlightedCellCol = -1;
+    let highlightedCellRow = -1;
 
     window.addEventListener('message', event => {
       const msg = event.data;
@@ -1056,12 +1066,27 @@ export class TerrainConfigPanel implements vscode.WebviewViewProvider {
 
             // Use explicit col/row for selection check to avoid index calculation issues
             const isThisCellSelected = isSelected && col === selectedCellCol && row === selectedCellRow;
+            const isThisCellHighlighted = zi === highlightedZoneIndex && col === highlightedCellCol && row === highlightedCellRow;
 
             // Cell border
-            overlayCtx.strokeStyle = isThisCellSelected
-              ? '#64ff64' : 'rgba(255, 200, 0, 0.5)';
-            overlayCtx.lineWidth = 1;
+            if (isThisCellHighlighted) {
+              // Highlighted cell from test canvas inspection - cyan pulsing border
+              overlayCtx.strokeStyle = '#00ffff';
+              overlayCtx.lineWidth = 3;
+            } else if (isThisCellSelected) {
+              overlayCtx.strokeStyle = '#64ff64';
+              overlayCtx.lineWidth = 1;
+            } else {
+              overlayCtx.strokeStyle = 'rgba(255, 200, 0, 0.5)';
+              overlayCtx.lineWidth = 1;
+            }
             overlayCtx.strokeRect(cx, cy, cellSize, cellSize);
+
+            // Extra highlight fill for inspected cell
+            if (isThisCellHighlighted) {
+              overlayCtx.fillStyle = 'rgba(0, 255, 255, 0.2)';
+              overlayCtx.fillRect(cx, cy, cellSize, cellSize);
+            }
 
             // Connection indicators (8 directions)
             if (cell && cell.connections) {
@@ -1079,6 +1104,51 @@ export class TerrainConfigPanel implements vscode.WebviewViewProvider {
           }
         }
       });
+    }
+
+    // Highlight a sprite in the zones by name (from test canvas inspection)
+    function highlightSpriteInZones(spriteName) {
+      if (!currentMapping || !spriteName) return;
+
+      // Clear previous highlight
+      highlightedZoneIndex = -1;
+      highlightedCellCol = -1;
+      highlightedCellRow = -1;
+
+      // Search all zones for the sprite
+      for (let zi = 0; zi < currentMapping.zones.length; zi++) {
+        const zone = currentMapping.zones[zi];
+        for (let row = 0; row < zone.rows; row++) {
+          for (let col = 0; col < zone.cols; col++) {
+            const cellIdx = row * zone.cols + col;
+            const cell = zone.cells[cellIdx];
+            if (cell && cell.spriteName === spriteName) {
+              // Found it! Set highlight state
+              highlightedZoneIndex = zi;
+              highlightedCellCol = col;
+              highlightedCellRow = row;
+
+              // Scroll the spritesheet to show this zone
+              const cellSize = zone.cellSize || 16;
+              const cellX = zone.x + col * cellSize;
+              const cellY = zone.y + row * cellSize;
+              const container = document.getElementById('spritesheet-container');
+              if (container) {
+                // Account for zoom
+                container.scrollTop = (cellY * zoomLevel) - (container.clientHeight / 2) + (cellSize * zoomLevel / 2);
+                container.scrollLeft = (cellX * zoomLevel) - (container.clientWidth / 2) + (cellSize * zoomLevel / 2);
+              }
+
+              renderOverlay();
+              showStatus('Highlighted: ' + spriteName, 'info', 2000);
+              return;
+            }
+          }
+        }
+      }
+
+      showStatus('Sprite not found: ' + spriteName, 'info', 2000);
+      renderOverlay();
     }
 
     function drawConnectionIndicator(cx, cy, cellSize, dir, active, isSelected) {
@@ -1839,15 +1909,66 @@ export class TerrainConfigPanel implements vscode.WebviewViewProvider {
         isPainting = false;
       });
 
+      const tooltip = document.getElementById('test-tooltip');
+
       testCanvas.addEventListener('mousemove', (e) => {
-        if (!isPainting) return;
         const rect = testCanvas.getBoundingClientRect();
         const x = Math.floor((e.clientX - rect.left) / TILE_SIZE);
         const y = Math.floor((e.clientY - rect.top) / TILE_SIZE);
+
+        // Update tooltip position and show info
+        if (x >= 0 && x < TEST_SIZE && y >= 0 && y < TEST_SIZE) {
+          const terrainType = testGrid[y * TEST_SIZE + x];
+          if (terrainType) {
+            const mask = calculateBitmask(x, y, terrainType);
+            const terrainConfig = config.terrains.find(t => t.type === terrainType);
+            const spriteName = terrainConfig?.bitmaskMappings[mask] || terrainConfig?.defaultSprite || 'unknown';
+
+            tooltip.innerHTML =
+              '<div class="row"><span class="label">Pos:</span><span class="value">[' + x + ',' + y + ']</span></div>' +
+              '<div class="row"><span class="label">Terrain:</span><span class="value">' + terrainType + '</span></div>' +
+              '<div class="row"><span class="label">Bitmask:</span><span class="value">' + mask + '</span></div>' +
+              '<div class="row"><span class="label">Sprite:</span><span class="value">' + spriteName + '</span></div>';
+            tooltip.style.display = 'block';
+            tooltip.style.left = (e.clientX - rect.left + 10) + 'px';
+            tooltip.style.top = (e.clientY - rect.top + 10) + 'px';
+          } else {
+            tooltip.style.display = 'none';
+          }
+        } else {
+          tooltip.style.display = 'none';
+        }
+
+        // Handle painting
+        if (!isPainting) return;
         if (x >= 0 && x < TEST_SIZE && y >= 0 && y < TEST_SIZE) {
           if (testGrid[y * TEST_SIZE + x] !== paintTerrain) {
             testGrid[y * TEST_SIZE + x] = paintTerrain;
             renderTestCanvas();
+          }
+        }
+      });
+
+      testCanvas.addEventListener('mouseleave', () => {
+        tooltip.style.display = 'none';
+      });
+
+      // Double-click to inspect cell and highlight in spritesheet
+      testCanvas.addEventListener('dblclick', (e) => {
+        const rect = testCanvas.getBoundingClientRect();
+        const x = Math.floor((e.clientX - rect.left) / TILE_SIZE);
+        const y = Math.floor((e.clientY - rect.top) / TILE_SIZE);
+
+        if (x >= 0 && x < TEST_SIZE && y >= 0 && y < TEST_SIZE) {
+          const terrainType = testGrid[y * TEST_SIZE + x];
+          if (terrainType && currentMapping) {
+            const mask = calculateBitmask(x, y, terrainType);
+            const terrainConfig = config.terrains.find(t => t.type === terrainType);
+            const spriteName = terrainConfig?.bitmaskMappings[mask] || terrainConfig?.defaultSprite;
+
+            if (spriteName) {
+              highlightSpriteInZones(spriteName);
+            }
           }
         }
       });
