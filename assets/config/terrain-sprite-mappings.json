@@ -1,0 +1,1044 @@
+{
+  "version": 1,
+  "mappings": {
+    "grass": {
+      "terrainType": "grass",
+      "spritesheet": "grass",
+      "zones": [
+        {
+          "id": "zone-1772686165343",
+          "name": "Zone 1",
+          "x": 0,
+          "y": 0,
+          "cols": 3,
+          "rows": 3,
+          "cellSize": 16,
+          "cells": [
+            {
+              "x": 0,
+              "y": 0,
+              "connections": {
+                "north": false,
+                "northeast": false,
+                "east": true,
+                "southeast": true,
+                "south": true,
+                "southwest": false,
+                "west": false,
+                "northwest": false
+              },
+              "spriteName": "grass-corner-nw"
+            },
+            {
+              "x": 16,
+              "y": 0,
+              "connections": {
+                "north": false,
+                "east": false,
+                "south": false,
+                "west": false,
+                "northeast": false,
+                "southeast": false,
+                "southwest": false,
+                "northwest": false
+              },
+              "spriteName": ""
+            },
+            {
+              "x": 32,
+              "y": 0,
+              "connections": {
+                "north": false,
+                "northeast": false,
+                "east": false,
+                "southeast": false,
+                "south": true,
+                "southwest": true,
+                "west": true,
+                "northwest": false
+              },
+              "spriteName": "grass-corner-ne"
+            },
+            {
+              "x": 0,
+              "y": 16,
+              "connections": {
+                "north": true,
+                "northeast": true,
+                "east": true,
+                "southeast": true,
+                "south": true,
+                "southwest": false,
+                "west": false,
+                "northwest": false
+              },
+              "spriteName": "grass-edge-w"
+            },
+            {
+              "x": 16,
+              "y": 16,
+              "connections": {
+                "north": true,
+                "northeast": true,
+                "east": true,
+                "southeast": true,
+                "south": true,
+                "southwest": true,
+                "west": true,
+                "northwest": true
+              },
+              "spriteName": "grass-center"
+            },
+            {
+              "x": 32,
+              "y": 16,
+              "connections": {
+                "north": true,
+                "east": false,
+                "south": true,
+                "west": true,
+                "northeast": false,
+                "southeast": false,
+                "southwest": true,
+                "northwest": true
+              },
+              "spriteName": "grass-edge-e"
+            },
+            {
+              "x": 0,
+              "y": 32,
+              "connections": {
+                "north": true,
+                "northeast": true,
+                "east": true,
+                "southeast": false,
+                "south": false,
+                "southwest": false,
+                "west": false,
+                "northwest": false
+              },
+              "spriteName": "grass-corner-sw"
+            },
+            {
+              "x": 16,
+              "y": 32,
+              "connections": {
+                "north": true,
+                "east": true,
+                "south": false,
+                "west": true,
+                "northeast": true,
+                "southeast": false,
+                "southwest": false,
+                "northwest": true
+              },
+              "spriteName": "grass-edge-s"
+            },
+            {
+              "x": 32,
+              "y": 32,
+              "connections": {
+                "north": true,
+                "northeast": false,
+                "east": false,
+                "southeast": false,
+                "south": false,
+                "southwest": false,
+                "west": true,
+                "northwest": true
+              },
+              "spriteName": "grass-corner-se"
+            }
+          ]
+        },
+        {
+          "id": "zone-1772692294176",
+          "name": "Zone 2",
+          "x": 48,
+          "y": 0,
+          "cols": 1,
+          "rows": 3,
+          "cellSize": 16,
+          "cells": [
+            {
+              "x": 48,
+              "y": 0,
+              "connections": {
+                "north": false,
+                "northeast": false,
+                "east": false,
+                "southeast": false,
+                "south": true,
+                "southwest": false,
+                "west": false,
+                "northwest": false
+              },
+              "spriteName": "tile_3_0"
+            },
+            {
+              "x": 48,
+              "y": 16,
+              "connections": {
+                "north": true,
+                "northeast": false,
+                "east": false,
+                "southeast": false,
+                "south": true,
+                "southwest": false,
+                "west": false,
+                "northwest": false
+              },
+              "spriteName": "tile_3_1"
+            },
+            {
+              "x": 48,
+              "y": 32,
+              "connections": {
+                "north": true,
+                "northeast": false,
+                "east": false,
+                "southeast": false,
+                "south": false,
+                "southwest": false,
+                "west": false,
+                "northwest": false
+              },
+              "spriteName": "tile_3_2"
+            }
+          ]
+        },
+        {
+          "id": "zone-1772697108649",
+          "name": "Zone 3",
+          "x": 64,
+          "y": 0,
+          "cols": 4,
+          "rows": 4,
+          "cellSize": 16,
+          "cells": [
+            {
+              "x": 64,
+              "y": 0,
+              "connections": {
+                "north": false,
+                "northeast": false,
+                "east": true,
+                "southeast": false,
+                "south": true,
+                "southwest": false,
+                "west": false,
+                "northwest": false
+              },
+              "spriteName": "tile_4_0"
+            },
+            {
+              "x": 80,
+              "y": 0,
+              "connections": {
+                "north": false,
+                "northeast": false,
+                "east": true,
+                "southeast": false,
+                "south": true,
+                "southwest": true,
+                "west": true,
+                "northwest": false
+              },
+              "spriteName": "tile_5_0"
+            },
+            {
+              "x": 96,
+              "y": 0,
+              "connections": {
+                "north": false,
+                "northeast": false,
+                "east": true,
+                "southeast": true,
+                "south": true,
+                "southwest": false,
+                "west": true,
+                "northwest": false
+              },
+              "spriteName": "tile_6_0"
+            },
+            {
+              "x": 112,
+              "y": 0,
+              "connections": {
+                "north": false,
+                "northeast": false,
+                "east": false,
+                "southeast": false,
+                "south": true,
+                "southwest": false,
+                "west": true,
+                "northwest": false
+              },
+              "spriteName": "tile_7_0"
+            },
+            {
+              "x": 64,
+              "y": 16,
+              "connections": {
+                "north": true,
+                "northeast": true,
+                "east": true,
+                "southeast": false,
+                "south": true,
+                "southwest": false,
+                "west": false,
+                "northwest": false
+              },
+              "spriteName": "tile_4_1"
+            },
+            {
+              "x": 80,
+              "y": 16,
+              "connections": {
+                "north": true,
+                "northeast": true,
+                "east": true,
+                "southeast": false,
+                "south": true,
+                "southwest": true,
+                "west": true,
+                "northwest": true
+              },
+              "spriteName": "tile_5_1"
+            },
+            {
+              "x": 96,
+              "y": 16,
+              "connections": {
+                "north": true,
+                "northeast": true,
+                "east": true,
+                "southeast": true,
+                "south": true,
+                "southwest": false,
+                "west": true,
+                "northwest": true
+              },
+              "spriteName": "tile_6_1"
+            },
+            {
+              "x": 112,
+              "y": 16,
+              "connections": {
+                "north": true,
+                "northeast": false,
+                "east": false,
+                "southeast": false,
+                "south": true,
+                "southwest": false,
+                "west": true,
+                "northwest": true
+              },
+              "spriteName": "tile_7_1"
+            },
+            {
+              "x": 64,
+              "y": 32,
+              "connections": {
+                "north": true,
+                "northeast": false,
+                "east": true,
+                "southeast": true,
+                "south": true,
+                "southwest": false,
+                "west": false,
+                "northwest": false
+              },
+              "spriteName": "tile_4_2"
+            },
+            {
+              "x": 80,
+              "y": 32,
+              "connections": {
+                "north": true,
+                "northeast": false,
+                "east": true,
+                "southeast": true,
+                "south": true,
+                "southwest": true,
+                "west": true,
+                "northwest": true
+              },
+              "spriteName": "tile_5_2"
+            },
+            {
+              "x": 96,
+              "y": 32,
+              "connections": {
+                "north": true,
+                "northeast": true,
+                "east": true,
+                "southeast": true,
+                "south": true,
+                "southwest": true,
+                "west": true,
+                "northwest": false
+              },
+              "spriteName": "tile_6_2"
+            },
+            {
+              "x": 112,
+              "y": 32,
+              "connections": {
+                "north": true,
+                "northeast": false,
+                "east": false,
+                "southeast": false,
+                "south": true,
+                "southwest": true,
+                "west": true,
+                "northwest": false
+              },
+              "spriteName": "tile_7_2"
+            },
+            {
+              "x": 64,
+              "y": 48,
+              "connections": {
+                "north": true,
+                "northeast": false,
+                "east": true,
+                "southeast": false,
+                "south": false,
+                "southwest": false,
+                "west": false,
+                "northwest": false
+              },
+              "spriteName": "tile_4_3"
+            },
+            {
+              "x": 80,
+              "y": 48,
+              "connections": {
+                "north": true,
+                "northeast": false,
+                "east": true,
+                "southeast": false,
+                "south": false,
+                "southwest": false,
+                "west": true,
+                "northwest": true
+              },
+              "spriteName": "tile_5_3"
+            },
+            {
+              "x": 96,
+              "y": 48,
+              "connections": {
+                "north": true,
+                "northeast": true,
+                "east": true,
+                "southeast": false,
+                "south": false,
+                "southwest": false,
+                "west": true,
+                "northwest": false
+              },
+              "spriteName": "tile_6_3"
+            },
+            {
+              "x": 112,
+              "y": 48,
+              "connections": {
+                "north": true,
+                "northeast": false,
+                "east": false,
+                "southeast": false,
+                "south": false,
+                "southwest": false,
+                "west": true,
+                "northwest": false
+              },
+              "spriteName": "tile_7_3"
+            }
+          ]
+        },
+        {
+          "id": "zone-1772699291173",
+          "name": "Zone 4",
+          "x": 0,
+          "y": 48,
+          "cols": 3,
+          "rows": 1,
+          "cellSize": 16,
+          "cells": [
+            {
+              "x": 0,
+              "y": 48,
+              "connections": {
+                "north": false,
+                "northeast": false,
+                "east": true,
+                "southeast": false,
+                "south": false,
+                "southwest": false,
+                "west": false,
+                "northwest": false
+              },
+              "spriteName": "tile_0_3"
+            },
+            {
+              "x": 16,
+              "y": 48,
+              "connections": {
+                "north": false,
+                "northeast": false,
+                "east": true,
+                "southeast": false,
+                "south": false,
+                "southwest": false,
+                "west": true,
+                "northwest": false
+              },
+              "spriteName": "tile_1_3"
+            },
+            {
+              "x": 32,
+              "y": 48,
+              "connections": {
+                "north": false,
+                "northeast": false,
+                "east": false,
+                "southeast": false,
+                "south": false,
+                "southwest": false,
+                "west": true,
+                "northwest": false
+              },
+              "spriteName": "tile_2_3"
+            }
+          ]
+        },
+        {
+          "id": "zone-1772699374870",
+          "name": "Zone 5",
+          "x": 48,
+          "y": 48,
+          "cols": 1,
+          "rows": 1,
+          "cellSize": 16,
+          "cells": [
+            {
+              "x": 48,
+              "y": 48,
+              "connections": {
+                "north": false,
+                "northeast": false,
+                "east": false,
+                "southeast": false,
+                "south": false,
+                "southwest": false,
+                "west": false,
+                "northwest": false
+              },
+              "spriteName": "tile_3_3"
+            }
+          ]
+        },
+        {
+          "id": "zone-1772699613677",
+          "name": "Zone 6",
+          "x": 64,
+          "y": 64,
+          "cols": 4,
+          "rows": 1,
+          "cellSize": 16,
+          "cells": [
+            {
+              "x": 64,
+              "y": 64,
+              "connections": {
+                "north": true,
+                "northeast": false,
+                "east": true,
+                "southeast": false,
+                "south": true,
+                "southwest": false,
+                "west": false,
+                "northwest": false
+              },
+              "spriteName": "tile_4_4"
+            },
+            {
+              "x": 80,
+              "y": 64,
+              "connections": {
+                "north": false,
+                "northeast": false,
+                "east": false,
+                "southeast": false,
+                "south": false,
+                "southwest": false,
+                "west": false,
+                "northwest": false
+              },
+              "spriteName": ""
+            },
+            {
+              "x": 96,
+              "y": 64,
+              "connections": {
+                "north": false,
+                "northeast": false,
+                "east": false,
+                "southeast": false,
+                "south": false,
+                "southwest": false,
+                "west": false,
+                "northwest": false
+              },
+              "spriteName": ""
+            },
+            {
+              "x": 112,
+              "y": 64,
+              "connections": {
+                "north": false,
+                "northeast": false,
+                "east": false,
+                "southeast": false,
+                "south": false,
+                "southwest": false,
+                "west": false,
+                "northwest": false
+              },
+              "spriteName": ""
+            }
+          ]
+        },
+        {
+          "id": "zone-1772701486501",
+          "name": "Zone 7",
+          "x": 0,
+          "y": 80,
+          "cols": 6,
+          "rows": 2,
+          "cellSize": 16,
+          "cells": [
+            {
+              "x": 0,
+              "y": 80,
+              "connections": {
+                "north": false,
+                "northeast": false,
+                "east": false,
+                "southeast": false,
+                "south": false,
+                "southwest": false,
+                "west": false,
+                "northwest": false
+              },
+              "spriteName": ""
+            },
+            {
+              "x": 16,
+              "y": 80,
+              "connections": {
+                "north": false,
+                "northeast": false,
+                "east": false,
+                "southeast": false,
+                "south": false,
+                "southwest": false,
+                "west": false,
+                "northwest": false
+              },
+              "spriteName": ""
+            },
+            {
+              "x": 32,
+              "y": 80,
+              "connections": {
+                "north": false,
+                "northeast": false,
+                "east": false,
+                "southeast": false,
+                "south": false,
+                "southwest": false,
+                "west": false,
+                "northwest": false
+              },
+              "spriteName": ""
+            },
+            {
+              "x": 48,
+              "y": 80,
+              "connections": {
+                "north": false,
+                "northeast": false,
+                "east": false,
+                "southeast": false,
+                "south": false,
+                "southwest": false,
+                "west": false,
+                "northwest": false
+              },
+              "spriteName": ""
+            },
+            {
+              "x": 64,
+              "y": 80,
+              "connections": {
+                "north": false,
+                "northeast": false,
+                "east": false,
+                "southeast": false,
+                "south": false,
+                "southwest": false,
+                "west": false,
+                "northwest": false
+              },
+              "spriteName": ""
+            },
+            {
+              "x": 80,
+              "y": 80,
+              "connections": {
+                "north": false,
+                "northeast": false,
+                "east": false,
+                "southeast": false,
+                "south": false,
+                "southwest": false,
+                "west": false,
+                "northwest": false
+              },
+              "spriteName": ""
+            },
+            {
+              "x": 0,
+              "y": 96,
+              "connections": {
+                "north": false,
+                "northeast": false,
+                "east": false,
+                "southeast": false,
+                "south": false,
+                "southwest": false,
+                "west": false,
+                "northwest": false
+              },
+              "spriteName": ""
+            },
+            {
+              "x": 16,
+              "y": 96,
+              "connections": {
+                "north": false,
+                "northeast": false,
+                "east": false,
+                "southeast": false,
+                "south": false,
+                "southwest": false,
+                "west": false,
+                "northwest": false
+              },
+              "spriteName": ""
+            },
+            {
+              "x": 32,
+              "y": 96,
+              "connections": {
+                "north": false,
+                "northeast": false,
+                "east": false,
+                "southeast": false,
+                "south": false,
+                "southwest": false,
+                "west": false,
+                "northwest": false
+              },
+              "spriteName": ""
+            },
+            {
+              "x": 48,
+              "y": 96,
+              "connections": {
+                "north": false,
+                "northeast": false,
+                "east": false,
+                "southeast": false,
+                "south": false,
+                "southwest": false,
+                "west": false,
+                "northwest": false
+              },
+              "spriteName": ""
+            },
+            {
+              "x": 64,
+              "y": 96,
+              "connections": {
+                "north": false,
+                "northeast": false,
+                "east": false,
+                "southeast": false,
+                "south": false,
+                "southwest": false,
+                "west": false,
+                "northwest": false
+              },
+              "spriteName": ""
+            },
+            {
+              "x": 80,
+              "y": 96,
+              "connections": {
+                "north": false,
+                "northeast": false,
+                "east": false,
+                "southeast": false,
+                "south": false,
+                "southwest": false,
+                "west": false,
+                "northwest": false
+              },
+              "spriteName": ""
+            }
+          ]
+        },
+        {
+          "id": "zone-1772702929591",
+          "name": "Zone 8",
+          "x": 128,
+          "y": 0,
+          "cols": 3,
+          "rows": 5,
+          "cellSize": 16,
+          "cells": [
+            {
+              "x": 128,
+              "y": 0,
+              "connections": {
+                "north": false,
+                "northeast": false,
+                "east": true,
+                "southeast": false,
+                "south": true,
+                "southwest": false,
+                "west": true,
+                "northwest": false
+              },
+              "spriteName": "tile_8_0"
+            },
+            {
+              "x": 144,
+              "y": 0,
+              "connections": {
+                "north": true,
+                "northeast": false,
+                "east": true,
+                "southeast": true,
+                "south": true,
+                "southwest": false,
+                "west": true,
+                "northwest": true
+              },
+              "spriteName": "tile_9_0"
+            },
+            {
+              "x": 160,
+              "y": 0,
+              "connections": {
+                "north": false,
+                "northeast": false,
+                "east": false,
+                "southeast": false,
+                "south": false,
+                "southwest": false,
+                "west": false,
+                "northwest": false
+              },
+              "spriteName": ""
+            },
+            {
+              "x": 128,
+              "y": 16,
+              "connections": {
+                "north": true,
+                "northeast": true,
+                "east": true,
+                "southeast": false,
+                "south": true,
+                "southwest": false,
+                "west": true,
+                "northwest": true
+              },
+              "spriteName": "tile_8_1"
+            },
+            {
+              "x": 144,
+              "y": 16,
+              "connections": {
+                "north": true,
+                "northeast": true,
+                "east": true,
+                "southeast": false,
+                "south": true,
+                "southwest": true,
+                "west": true,
+                "northwest": false
+              },
+              "spriteName": "tile_9_1"
+            },
+            {
+              "x": 160,
+              "y": 16,
+              "connections": {
+                "north": false,
+                "northeast": false,
+                "east": false,
+                "southeast": false,
+                "south": false,
+                "southwest": false,
+                "west": false,
+                "northwest": false
+              },
+              "spriteName": ""
+            },
+            {
+              "x": 128,
+              "y": 32,
+              "connections": {
+                "north": true,
+                "northeast": false,
+                "east": true,
+                "southeast": true,
+                "south": true,
+                "southwest": true,
+                "west": true,
+                "northwest": false
+              },
+              "spriteName": "tile_8_2"
+            },
+            {
+              "x": 144,
+              "y": 32,
+              "connections": {
+                "north": true,
+                "northeast": false,
+                "east": true,
+                "southeast": true,
+                "south": true,
+                "southwest": false,
+                "west": true,
+                "northwest": false
+              },
+              "spriteName": "tile_9_2"
+            },
+            {
+              "x": 160,
+              "y": 32,
+              "connections": {
+                "north": true,
+                "northeast": false,
+                "east": true,
+                "southeast": false,
+                "south": true,
+                "southwest": true,
+                "west": true,
+                "northwest": false
+              },
+              "spriteName": "tile_10_2"
+            },
+            {
+              "x": 128,
+              "y": 48,
+              "connections": {
+                "north": true,
+                "northeast": false,
+                "east": true,
+                "southeast": false,
+                "south": false,
+                "southwest": false,
+                "west": true,
+                "northwest": false
+              },
+              "spriteName": "tile_8_3"
+            },
+            {
+              "x": 144,
+              "y": 48,
+              "connections": {
+                "north": true,
+                "northeast": true,
+                "east": true,
+                "southeast": false,
+                "south": true,
+                "southwest": false,
+                "west": true,
+                "northwest": false
+              },
+              "spriteName": "tile_9_3"
+            },
+            {
+              "x": 160,
+              "y": 48,
+              "connections": {
+                "north": true,
+                "northeast": false,
+                "east": true,
+                "southeast": false,
+                "south": true,
+                "southwest": false,
+                "west": true,
+                "northwest": true
+              },
+              "spriteName": "tile_10_3"
+            },
+            {
+              "x": 128,
+              "y": 64,
+              "connections": {
+                "north": true,
+                "northeast": false,
+                "east": true,
+                "southeast": false,
+                "south": true,
+                "southwest": false,
+                "west": true,
+                "northwest": false
+              },
+              "spriteName": "tile_8_4"
+            },
+            {
+              "x": 144,
+              "y": 64,
+              "connections": {
+                "north": false,
+                "northeast": false,
+                "east": false,
+                "southeast": false,
+                "south": false,
+                "southwest": false,
+                "west": false,
+                "northwest": false
+              },
+              "spriteName": ""
+            },
+            {
+              "x": 160,
+              "y": 64,
+              "connections": {
+                "north": false,
+                "northeast": false,
+                "east": false,
+                "southeast": false,
+                "south": false,
+                "southwest": false,
+                "west": false,
+                "northwest": false
+              },
+              "spriteName": "tile_10_4"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
