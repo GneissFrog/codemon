@@ -188,6 +188,57 @@ export interface SpritesheetData {
   imageUrl: string;
   normalMapUrl?: string;  // Data URL for normal map (if exists)
   sprites: Record<string, SpriteDef>;
+  isCharacter?: boolean;
+  characterConfig?: CharacterConfig;
+  asepriteData?: AsepriteExportData;  // Parsed Aseprite JSON
+  asepriteTags?: string[];  // Tags to filter
+}
+
+// ─── Aseprite Types ────────────────────────────────────────────────────────
+
+export interface AsepriteFrameData {
+  frame: { x: number; y: number; w: number; h: number };
+  rotated: boolean;
+  trimmed: boolean;
+  spriteSourceSize: { x: number; y: number; w: number; h: number };
+  sourceSize: { w: number; h: number };
+  duration: number;  // ms per frame
+}
+
+export interface AsepriteTagData {
+  name: string;
+  from: number;
+  to: number;
+  direction: 'forward' | 'reverse' | 'pingpong';
+}
+
+export interface AsepriteExportData {
+  frames: Record<string, AsepriteFrameData>;
+  meta: {
+    app: string;
+    version: string;
+    image: string;
+    format: string;
+    size: { w: number; h: number };
+    scale: number;
+    frameTags: AsepriteTagData[];
+    slices?: unknown[];
+  };
+}
+
+// ─── Character Config Types ────────────────────────────────────────────────
+
+export interface ActionConfig {
+  name: string;
+  frames: number;
+  skill?: string;
+  customSkillName?: string;
+}
+
+export interface CharacterConfig {
+  directions: string[];
+  actions: ActionConfig[];
+  framesPerAction?: number;  // Legacy support
 }
 
 export interface WebviewAssetData {
@@ -258,7 +309,7 @@ export interface Renderer {
   drawText(text: string, x: number, y: number, color: string, fontSize?: number): void;
 
   /** Set camera transform for world rendering */
-  setTransform(panX: number, panY: number, zoom: number): void;
+  setTransform(panX: number, panY: number, zoom: number, baseScale?: number): void;
 
   /** Handle resize */
   resize(width: number, height: number): void;

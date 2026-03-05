@@ -1,5 +1,12 @@
 /**
  * Camera - Pan and zoom controls for the game view
+ *
+ * Uses scroll-based coordinates compatible with Phaser's camera model:
+ * - scrollX/scrollY: world position at screen origin (0,0)
+ * - zoom: zoom level
+ *
+ * Screen to world: worldX = scrollX + screenX / zoom
+ * World to screen: screenX = (worldX - scrollX) * zoom
  */
 
 import { CameraState } from './types';
@@ -18,8 +25,9 @@ export class Camera {
   }
 
   pan(dx: number, dy: number): void {
-    this.state.panX += dx;
-    this.state.panY += dy;
+    // Convert screen delta to scroll delta (in world units)
+    this.state.panX -= dx / this.state.zoom;
+    this.state.panY -= dy / this.state.zoom;
   }
 
   setPan(x: number, y: number): void {
@@ -27,16 +35,35 @@ export class Camera {
     this.state.panY = y;
   }
 
+  /**
+   * Zoom centered on a screen position
+   *
+   * @param clientX Screen X coordinate (relative to canvas)
+   * @param clientY Screen Y coordinate (relative to canvas)
+   * @param delta Zoom multiplier (e.g., 1.1 to zoom in, 0.9 to zoom out)
+   */
   zoomAt(clientX: number, clientY: number, delta: number): void {
     const oldZoom = this.state.zoom;
-    this.state.zoom = Math.min(
+    const newZoom = Math.min(
       this.state.maxZoom,
       Math.max(this.state.minZoom, this.state.zoom * delta)
     );
 
-    // Zoom toward cursor position
-    this.state.panX = clientX - (clientX - this.state.panX) * (this.state.zoom / oldZoom);
-    this.state.panY = clientY - (clientY - this.state.panY) * (this.state.zoom / oldZoom);
+    if (newZoom === oldZoom) return;
+
+    // Calculate world position under cursor before zoom
+    // worldX = scrollX + screenX / zoom (where scrollX = panX)
+    const worldX = this.state.panX + clientX / oldZoom;
+    const worldY = this.state.panY + clientY / oldZoom;
+
+    // Update zoom
+    this.state.zoom = newZoom;
+
+    // Adjust scroll so the world position under cursor stays at the same screen position
+    // We want: worldX = newScrollX + clientX / newZoom
+    // So: newScrollX = worldX - clientX / newZoom
+    this.state.panX = worldX - clientX / newZoom;
+    this.state.panY = worldY - clientY / newZoom;
   }
 
   screenToWorld(
@@ -48,14 +75,11 @@ export class Camera {
     worldHeight: number,
     tileSize: number
   ): { x: number; y: number } {
-    const worldPixelW = worldWidth > 0 ? worldWidth * tileSize : 400;
-    const worldPixelH = worldHeight > 0 ? worldHeight * tileSize : 300;
-    const baseScale = Math.min(canvasWidth / worldPixelW, canvasHeight / worldPixelH);
-    const totalScale = this.state.zoom * baseScale;
-
+    // Direct coordinate conversion without baseScale
+    // baseScale is handled by the world size, not the camera
     return {
-      x: (screenX - this.state.panX) / totalScale,
-      y: (screenY - this.state.panY) / totalScale,
+      x: this.state.panX + screenX / this.state.zoom,
+      y: this.state.panY + screenY / this.state.zoom,
     };
   }
 
@@ -68,14 +92,9 @@ export class Camera {
     worldHeight: number,
     tileSize: number
   ): { x: number; y: number } {
-    const worldPixelW = worldWidth > 0 ? worldWidth * tileSize : 400;
-    const worldPixelH = worldHeight > 0 ? worldHeight * tileSize : 300;
-    const baseScale = Math.min(canvasWidth / worldPixelW, canvasHeight / worldPixelH);
-    const totalScale = this.state.zoom * baseScale;
-
     return {
-      x: worldX * totalScale + this.state.panX,
-      y: worldY * totalScale + this.state.panY,
+      x: (worldX - this.state.panX) * this.state.zoom,
+      y: (worldY - this.state.panY) * this.state.zoom,
     };
   }
 

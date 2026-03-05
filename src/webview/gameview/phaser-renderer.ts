@@ -9,7 +9,7 @@
  */
 
 import Phaser from 'phaser';
-import { Renderer, WebviewAssetData, Tile, ViewportBounds, TILE_SIZE, PointLight, LightingState } from './types';
+import { Renderer, WebviewAssetData, Tile, ViewportBounds, TILE_SIZE, PointLight, LightingState, AsepriteExportData, AsepriteTagData } from './types';
 import { BootScene, GameScene, UIScene } from './scenes';
 import { LightingManager } from './LightingManager';
 
@@ -224,6 +224,11 @@ export class PhaserRenderer implements Renderer {
           console.log(`[PhaserRenderer] Loaded spritesheet: ${name} with ${Object.keys(sheetData.sprites).length} sprites`);
         }
 
+        // Create animations from Aseprite data if available
+        if (sheetData.asepriteData && this.gameScene) {
+          this.createAsepriteAnimations(name, sheetData.asepriteData, sheetData.asepriteTags);
+        }
+
         // Load normal map if available
         if (sheetData.normalMapUrl) {
           const normalImage = new Image();
@@ -248,16 +253,88 @@ export class PhaserRenderer implements Renderer {
       const characterSheetName = assets.spriteMappings['character'];
       if (characterSheetName && this.textures.has(characterSheetName)) {
         const sheetData = assets.spritesheets[characterSheetName];
-        if (sheetData?.isCharacter && sheetData?.characterConfig) {
-          const config = sheetData.characterConfig;
-          this.gameScene.setAgentConfig(
-            characterSheetName,
-            config.directions,
-            config.actions.map(a => ({ name: a.name, frames: a.frames }))
-          );
+        if (sheetData?.isCharacter) {
+          // If Aseprite data is available, use it for animation config
+          if (sheetData.asepriteData) {
+            this.gameScene.setAsepriteConfig(
+              characterSheetName,
+              sheetData.asepriteData,
+              sheetData.asepriteTags
+            );
+          } else if (sheetData.characterConfig) {
+            // Fall back to manual character config
+            const config = sheetData.characterConfig;
+            this.gameScene.setAgentConfig(
+              characterSheetName,
+              config.directions,
+              config.actions.map(a => ({ name: a.name, frames: a.frames }))
+            );
+          }
           this.gameScene.createAgentAnimations();
         }
       }
+    }
+  }
+
+  /**
+   * Create Phaser animations from Aseprite tag data
+   */
+  private createAsepriteAnimations(
+    sheetName: string,
+    asepriteData: AsepriteExportData,
+    filterTags?: string[]
+  ): void {
+    if (!this.game) return;
+
+    const anims = this.game.anims;
+    const frameTags = asepriteData.meta.frameTags || [];
+    const frames = asepriteData.frames;
+
+    // Filter tags if specified
+    const tagsToCreate = filterTags
+      ? frameTags.filter(tag => filterTags.includes(tag.name))
+      : frameTags;
+
+    for (const tag of tagsToCreate) {
+      const animKey = `${sheetName}_${tag.name}`;
+
+      // Check if animation already exists
+      if (anims.exists(animKey)) {
+        continue;
+      }
+
+      // Build frame array from tag range
+      const frameNames = Object.keys(frames).sort((a, b) => {
+        const aNum = parseInt(a.match(/\d+/)?.[0] || '0');
+        const bNum = parseInt(b.match(/\d+/)?.[0] || '0');
+        return aNum - bNum;
+      });
+
+      // Get frames for this tag
+      const tagFrames: Phaser.Types.Animations.AnimationFrame[] = [];
+      for (let i = tag.from; i <= tag.to; i++) {
+        const frameName = frameNames[i] || `${i}`;
+        const frameData = frames[frameName];
+        if (frameData) {
+          tagFrames.push({
+            key: sheetName,
+            frame: frameName,
+            duration: frameData.duration,
+          });
+        }
+      }
+
+      if (tagFrames.length === 0) continue;
+
+      // Create animation with Aseprite frame durations
+      anims.create({
+        key: animKey,
+        frames: tagFrames,
+        repeat: tag.direction === 'pingpong' ? -1 : (tag.name.toLowerCase().includes('idle') ? -1 : 0),
+        yoyo: tag.direction === 'pingpong',
+      });
+
+      console.log(`[PhaserRenderer] Created Aseprite animation: ${animKey} (${tagFrames.length} frames)`);
     }
   }
 
@@ -438,7 +515,7 @@ export class PhaserRenderer implements Renderer {
     }
   }
 
-  setTransform(panX: number, panY: number, zoom: number): void {
+  setTransform(panX: number, panY: number, zoom: number, baseScale?: number): void {
     this.currentPanX = panX;
     this.currentPanY = panY;
     this.currentZoom = zoom;
@@ -452,6 +529,11 @@ export class PhaserRenderer implements Renderer {
 
   /**
    * Calculate and update viewport bounds based on camera and canvas
+   *
+   * With scroll-based coordinates:
+   * - panX/panY = scrollX/scrollY = world position at screen origin
+   * - At screenX=0: worldX = panX
+   * - At screenX=viewW: worldX = panX + viewW / zoom
    */
   private updateViewportBounds(): void {
     if (!this.canvas) return;
@@ -459,13 +541,13 @@ export class PhaserRenderer implements Renderer {
     const viewW = this.canvas.width;
     const viewH = this.canvas.height;
     const zoom = this.currentZoom;
-    const panX = this.currentPanX;
-    const panY = this.currentPanY;
+    const scrollX = this.currentPanX;
+    const scrollY = this.currentPanY;
 
-    const left = -panX / (TILE_SIZE * zoom);
-    const top = -panY / (TILE_SIZE * zoom);
-    const right = (viewW - panX) / (TILE_SIZE * zoom);
-    const bottom = (viewH - panY) / (TILE_SIZE * zoom);
+    const left = scrollX / TILE_SIZE;
+    const top = scrollY / TILE_SIZE;
+    const right = (scrollX + viewW / zoom) / TILE_SIZE;
+    const bottom = (scrollY + viewH / zoom) / TILE_SIZE;
 
     this.viewportBounds = {
       minX: Math.floor(left) - 1,
@@ -482,6 +564,14 @@ export class PhaserRenderer implements Renderer {
         this.gameScene.resize(width, height);
       }
     }
+  }
+
+  /**
+   * Convert screen coordinates to world coordinates using Phaser's camera
+   */
+  screenToWorld(screenX: number, screenY: number): { x: number; y: number } | null {
+    if (!this.gameScene) return null;
+    return this.gameScene.screenToWorld(screenX, screenY);
   }
 
   // ─── Lighting System ─────────────────────────────────────────────────────

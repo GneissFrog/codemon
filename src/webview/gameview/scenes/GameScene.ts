@@ -6,7 +6,7 @@
  */
 
 import Phaser from 'phaser';
-import { Tile, Plot, TILE_SIZE, WeatherParticle } from '../types';
+import { Tile, Plot, TILE_SIZE, WeatherParticle, AsepriteExportData, AsepriteTagData } from '../types';
 
 // Input callback types
 export interface InputCallbacks {
@@ -45,6 +45,11 @@ export class GameScene extends Phaser.Scene {
   private agentActions: string[] = [];
   private agentDirections: string[] = [];
   private agentFramesPerAction: Map<string, number> = new Map(); // action -> frame count
+
+  // Aseprite-based animation config
+  private asepriteData: AsepriteExportData | null = null;
+  private asepriteTags: string[] | undefined;
+  private useAsepriteAnimations = false;
 
   // Particle emitters using Phaser's particle system
   private dustEmitter!: Phaser.GameObjects.Particles.ParticleEmitter;
@@ -230,6 +235,47 @@ export class GameScene extends Phaser.Scene {
   }
 
   /**
+   * Set Aseprite-based animation configuration
+   * When set, animations will be created from Aseprite tag data
+   */
+  setAsepriteConfig(
+    sheetName: string,
+    asepriteData: AsepriteExportData,
+    filterTags?: string[]
+  ): void {
+    this.agentSheetName = sheetName;
+    this.asepriteData = asepriteData;
+    this.asepriteTags = filterTags;
+    this.useAsepriteAnimations = true;
+
+    // Extract action names from Aseprite tags
+    const tags = asepriteData.meta.frameTags || [];
+    this.agentActions = filterTags
+      ? tags.filter(t => filterTags.includes(t.name)).map(t => t.name)
+      : tags.map(t => t.name);
+
+    // Directions are typically embedded in tag names (e.g., "walk-down", "idle-up")
+    // Try to extract directions from tag names
+    const directions = new Set<string>();
+    for (const tag of tags) {
+      const parts = tag.name.split('-');
+      if (parts.length >= 2) {
+        const lastPart = parts[parts.length - 1].toLowerCase();
+        if (['up', 'down', 'left', 'right'].includes(lastPart)) {
+          directions.add(lastPart);
+        }
+      }
+    }
+    this.agentDirections = directions.size > 0 ? Array.from(directions) : ['down'];
+
+    // Reset animation state
+    this.agentAnimationsCreated = false;
+    this.currentAgentAnimation = '';
+
+    console.log(`[GameScene] Aseprite config set: ${sheetName}, ${this.agentActions.length} actions, ${this.agentDirections.length} directions`);
+  }
+
+  /**
    * Create agent animations from the spritesheet using loaded config
    */
   createAgentAnimations(): void {
@@ -238,6 +284,12 @@ export class GameScene extends Phaser.Scene {
     // Check if the texture exists
     if (!this.textures.exists(this.agentSheetName)) {
       console.warn(`[GameScene] ${this.agentSheetName} texture not loaded yet`);
+      return;
+    }
+
+    // If using Aseprite animations, check if they were already created by PhaserRenderer
+    if (this.useAsepriteAnimations && this.asepriteData) {
+      this.createAgentFromAseprite();
       return;
     }
 
@@ -305,6 +357,98 @@ export class GameScene extends Phaser.Scene {
   }
 
   /**
+   * Create agent using Aseprite tag-based animations
+   */
+  private createAgentFromAseprite(): void {
+    if (!this.asepriteData) return;
+
+    const tags = this.asepriteData.meta.frameTags || [];
+    const frames = this.asepriteData.frames;
+
+    // Get the first available frame for the default sprite
+    const frameNames = Object.keys(frames);
+    if (frameNames.length === 0) {
+      console.warn('[GameScene] No frames found in Aseprite data');
+      return;
+    }
+
+    // Create agent sprite with first frame
+    this.agentSprite = this.add.sprite(0, 0, this.agentSheetName, frameNames[0]);
+    this.agentSprite.setOrigin(0.5, 0.75);
+    this.agentSprite.setDepth(10);
+
+    // Enable Light2D pipeline with normal map if available
+    if (this.lightsEnabled && this.textures.exists(`${this.agentSheetName}_normal`)) {
+      try {
+        this.agentSprite.setPipeline('Light2D');
+        this.agentSprite.normalMap = this.textures.get(`${this.agentSheetName}_normal`);
+        console.log(`[GameScene] Agent sprite using Light2D pipeline with normal map`);
+      } catch (e) {
+        console.warn(`[GameScene] Failed to set Light2D pipeline on agent: ${e}`);
+      }
+    }
+
+    this.charactersLayer.add(this.agentSprite);
+
+    // Create agent animation mappings from Aseprite tags
+    // Map tag names like "walk-down" to "agent_walk_down"
+    for (const tag of tags) {
+      if (this.asepriteTags && !this.asepriteTags.includes(tag.name)) continue;
+
+      const animKey = `agent_${tag.name.replace(/-/g, '_')}`;
+
+      // Skip if animation already exists (may have been created by PhaserRenderer)
+      if (this.anims.exists(animKey)) continue;
+
+      // Also create with sheet prefix (for PhaserRenderer compatibility)
+      const sheetAnimKey = `${this.agentSheetName}_${tag.name}`;
+      if (this.anims.exists(sheetAnimKey)) {
+        // Animation exists with sheet prefix, create alias
+        const existingAnim = this.anims.get(sheetAnimKey);
+        if (existingAnim) {
+          this.anims.addAlias(animKey, sheetAnimKey);
+        }
+        continue;
+      }
+
+      // Build frame array from tag range
+      const sortedFrameNames = Object.keys(frames).sort((a, b) => {
+        const aNum = parseInt(a.match(/\d+/)?.[0] || '0');
+        const bNum = parseInt(b.match(/\d+/)?.[0] || '0');
+        return aNum - bNum;
+      });
+
+      const tagFrames: Phaser.Types.Animations.AnimationFrame[] = [];
+      for (let i = tag.from; i <= tag.to; i++) {
+        const frameName = sortedFrameNames[i] || `${i}`;
+        const frameData = frames[frameName];
+        if (frameData) {
+          tagFrames.push({
+            key: this.agentSheetName,
+            frame: frameName,
+            duration: frameData.duration,
+          });
+        }
+      }
+
+      if (tagFrames.length === 0) continue;
+
+      // Create animation with Aseprite frame durations
+      this.anims.create({
+        key: animKey,
+        frames: tagFrames,
+        repeat: tag.direction === 'pingpong' ? -1 : (tag.name.toLowerCase().includes('idle') ? -1 : 0),
+        yoyo: tag.direction === 'pingpong',
+      });
+
+      console.log(`[GameScene] Created Aseprite agent animation: ${animKey}`);
+    }
+
+    this.agentAnimationsCreated = true;
+    console.log(`[GameScene] Agent animations created from Aseprite for ${this.agentSheetName}`);
+  }
+
+  /**
    * Update agent sprite position and animation
    */
   updateAgentSprite(x: number, y: number, action: string, direction: string): void {
@@ -322,8 +466,24 @@ export class GameScene extends Phaser.Scene {
     const normalizedAction = this.agentActions.includes(action) ? action : (this.agentActions[0] || 'idle');
     const normalizedDirection = this.agentDirections.includes(direction) ? direction : (this.agentDirections[0] || 'down');
 
-    // Build animation key
-    const animKey = `agent_${normalizedAction}_${normalizedDirection}`;
+    // Try multiple animation key formats
+    let animKey = `agent_${normalizedAction}_${normalizedDirection}`;
+
+    // For Aseprite, also try tag name format (e.g., "agent_walk-down")
+    if (!this.anims.exists(animKey)) {
+      const asepriteKey = `agent_${normalizedAction}-${normalizedDirection}`;
+      if (this.anims.exists(asepriteKey)) {
+        animKey = asepriteKey;
+      }
+    }
+
+    // Also try sheet prefix format (PhaserRenderer creates these)
+    if (!this.anims.exists(animKey)) {
+      const sheetKey = `${this.agentSheetName}_${normalizedAction}-${normalizedDirection}`;
+      if (this.anims.exists(sheetKey)) {
+        animKey = sheetKey;
+      }
+    }
 
     // Only switch animation if it changed
     if (this.currentAgentAnimation !== animKey && this.anims.exists(animKey)) {
@@ -791,11 +951,29 @@ export class GameScene extends Phaser.Scene {
 
   /**
    * Set camera transform
+   *
+   * The camera panX/panY are scroll values (world position at screen origin):
+   *   worldX = panX + screenX / zoom
+   *
+   * We set the camera origin to (0,0) so zoom happens from top-left,
+   * which matches our coordinate formula.
    */
-  setTransform(panX: number, panY: number, zoom: number): void {
+  setTransform(panX: number, panY: number, zoom: number, baseScale: number = 1): void {
     const camera = this.cameras.main;
-    camera.setScroll(-panX / zoom, -panY / zoom);
+    // Set origin to top-left so zoom anchors there (default is center at 0.5, 0.5)
+    camera.setOrigin(0, 0);
+    camera.setScroll(panX, panY);
     camera.setZoom(zoom);
+  }
+
+  /**
+   * Convert screen coordinates to world coordinates using Phaser's camera
+   */
+  screenToWorld(screenX: number, screenY: number): { x: number; y: number } {
+    const camera = this.cameras.main;
+    // Phaser's getWorldPoint handles zoom and scroll correctly
+    const worldPoint = camera.getWorldPoint(screenX, screenY);
+    return { x: worldPoint.x, y: worldPoint.y };
   }
 
   /**

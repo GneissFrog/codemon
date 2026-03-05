@@ -317,10 +317,14 @@ function setupInputHandlers(): void {
 
     if (plot) {
       const rect = mapWrapper.getBoundingClientRect();
-      let tx = e.clientX - rect.left + 12;
-      let ty = e.clientY - rect.top - 8;
+      // Offset by a full tile to ensure hovered tile remains visible
+      const offset = TILE_SIZE * camera.state.zoom;
+      let tx = e.clientX - rect.left + offset;
+      let ty = e.clientY - rect.top + offset;
+      // Flip to left if too close to right edge
       if (tx + 200 > rect.width) tx = e.clientX - rect.left - 210;
-      if (ty + 80 > rect.height) ty = e.clientY - rect.top - 80;
+      // Flip above if too close to bottom edge
+      if (ty + 80 > rect.height) ty = e.clientY - rect.top - 80 - offset;
       tooltip.style.left = tx + 'px';
       tooltip.style.top = ty + 'px';
     }
@@ -357,20 +361,16 @@ function setupInputHandlers(): void {
 
 function getPlotAtPoint(clientX: number, clientY: number): Plot | null {
   const rect = canvas.getBoundingClientRect();
-  const worldWidth = engine.state.worldWidth;
-  const worldHeight = engine.state.worldHeight;
-  const worldPixelW = worldWidth > 0 ? worldWidth * TILE_SIZE : 400;
-  const worldPixelH = worldHeight > 0 ? worldHeight * TILE_SIZE : 300;
-  const baseScale = Math.min(canvas.width / worldPixelW, canvas.height / worldPixelH);
-  const totalScale = camera.state.zoom * baseScale;
+  const screenX = clientX - rect.left;
+  const screenY = clientY - rect.top;
 
-  // Convert screen coords to pixel coords
-  const mx = (clientX - rect.left - camera.state.panX) / totalScale;
-  const my = (clientY - rect.top - camera.state.panY) / totalScale;
+  // Use Phaser's built-in coordinate conversion for accuracy
+  const worldPos = (renderer as PhaserRenderer).screenToWorld(screenX, screenY);
+  if (!worldPos) return null;
 
   // Convert to tile coords for spatial hash lookup
-  const tileX = Math.floor(mx / TILE_SIZE);
-  const tileY = Math.floor(my / TILE_SIZE);
+  const tileX = Math.floor(worldPos.x / TILE_SIZE);
+  const tileY = Math.floor(worldPos.y / TILE_SIZE);
 
   // Use spatial hash for O(1) lookup (prefers files over directories)
   return engine.getPlotAtTile(tileX, tileY, true);
@@ -462,6 +462,10 @@ function setupMessageHandler(): void {
         if ((renderer as any).updateLightingConfig) {
           (renderer as any).updateLightingConfig(message.config);
         }
+        break;
+
+      case 'updateContextFarm':
+        handleContextFarmUpdate(message.state);
         break;
     }
   });
@@ -576,6 +580,34 @@ function updateSessionDisplay(): void {
   document.getElementById('session-tokens')!.textContent = formatTokens(engine.state.sessionTokens);
   (document.getElementById('session-bar') as HTMLElement).style.width =
     Math.min(100, (engine.state.sessionTokens / 100000) * 100) + '%';
+}
+
+function handleContextFarmUpdate(state: any): void {
+  // Update water tower gauge
+  const fillPercentage = state.fillPercentage || 0;
+  const waterTowerBar = document.getElementById('session-bar') as HTMLElement;
+  if (waterTowerBar) {
+    waterTowerBar.style.width = fillPercentage + '%';
+    waterTowerBar.className = 'stat-bar-fill' +
+      (fillPercentage >= 90 ? ' danger' : fillPercentage >= 70 ? ' warning' : '');
+  }
+
+  // Update session tokens display with context farm tokens
+  const tokensDisplay = document.getElementById('session-tokens');
+  if (tokensDisplay) {
+    tokensDisplay.textContent = formatTokens(state.totalTokens || 0);
+  }
+
+  // Update weather based on state
+  if (state.weather && renderer) {
+    const weatherType = state.weather === 'sunny' ? 'clear' :
+                        state.weather === 'overcast' ? 'rain' : 'storm';
+    engine.setWeather(weatherType, fillPercentage / 100);
+    (renderer as PhaserRenderer).setWeather(weatherType, fillPercentage / 100);
+  }
+
+  // TODO: Update bug overlays on plots when visualization is implemented
+  // state.bugs contains BugInstance[] with filePath, type, errorMessage
 }
 
 // ─── Utility Functions ─────────────────────────────────────────────────────
