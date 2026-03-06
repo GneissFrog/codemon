@@ -58,9 +58,12 @@ interface WorldBounds {
 
 // ─── Noise Utilities ──────────────────────────────────────────────────────────
 
-/** Deterministic hash for 2D integer coordinates */
+/** Module-level seed — set by WorldGenerator before each generation pass */
+let _seed = 0;
+
+/** Deterministic hash for 2D integer coordinates, incorporating global seed */
 function hash2d(ix: number, iy: number): number {
-  let h = (ix * 374761393 + iy * 668265263) >>> 0;
+  let h = (ix * 374761393 + iy * 668265263 + _seed) >>> 0;
   h = ((h ^ (h >> 13)) * 1274126177) >>> 0;
   h = (h ^ (h >> 16)) >>> 0;
   return (h & 0x7fffffff) / 0x7fffffff; // [0, 1]
@@ -108,9 +111,9 @@ function fbmNoise(x: number, y: number, octaves: number = 2): number {
   return value / totalAmplitude;
 }
 
-/** Deterministic integer hash for a single value */
+/** Deterministic integer hash for a single value, incorporating global seed */
 function intHash(n: number): number {
-  let h = ((n * 2654435761) >>> 0);
+  let h = (((n ^ _seed) * 2654435761) >>> 0);
   h = ((h ^ (h >> 13)) * 1274126177) >>> 0;
   return (h ^ (h >> 16)) >>> 0;
 }
@@ -177,6 +180,7 @@ export class WorldGenerator {
   private moduleRegistry: ModuleRegistry | null;
   private placedModules: PlacedModuleInfo[] = [];
   private autotiler: Autotiler;
+  private seed: number;
 
   constructor(
     map: WorldMap,
@@ -188,6 +192,7 @@ export class WorldGenerator {
     this.config = { ...DEFAULT_CONFIG, ...config };
     this.moduleRegistry = moduleRegistry ?? null;
     this.autotiler = new Autotiler(autotilerConfig ?? { version: 3, terrains: [], transitions: [] });
+    this.seed = Date.now();
 
     // Map file extensions to crop types
     this.fileExtensionToCrop = new Map([
@@ -236,7 +241,20 @@ export class WorldGenerator {
    * jitter + constraint relaxation), and ground is filled AFTER plot positions
    * are finalized so grass always covers the entire world.
    */
+  /** Set the seed for procedural generation. Call before generateFromLayout. */
+  setSeed(seed: number): void {
+    this.seed = seed;
+  }
+
+  /** Get the current seed */
+  getSeed(): number {
+    return this.seed;
+  }
+
   generateFromLayout(layout: MapLayout): void {
+    // Set module-level seed for all noise/hash functions
+    _seed = this.seed;
+
     // Clear existing
     this.map.clearTiles();
 
@@ -274,14 +292,15 @@ export class WorldGenerator {
       dirLookup.set(dirPath, rect);
     }
 
-    // 4. Update map dimensions to match world (tile units)
-    this.map.setDimensions(bounds.maxX, bounds.maxY);
+    // 4. Update map dimensions to match world (tile count, not max coordinate)
+    //    Tiles span [0..maxX] inclusive, so width = maxX + 1
+    this.map.setDimensions(bounds.maxX + 1, bounds.maxY + 1);
 
     // ── PHASE 1: TERRAIN FOUNDATION ──
     // All terrain tiles placed with default sprites, then autotiled.
 
-    // 5. Fill ground with noise-based grass variants
-    this.fillGround(bounds);
+    // 5. Fill water base + island-shaped grass
+    this.fillGround(bounds, plotRects);
 
     // 6. Place tilled dirt inside directory plot areas
     for (const rect of plotRects) {
@@ -296,17 +315,15 @@ export class WorldGenerator {
         worldHeight: bounds.maxY - bounds.minY,
         plots: plotRects.map(r => ({ x: r.x, y: r.y, width: r.width, height: r.height })),
         pathCount: plotRects.length,
+        seed: this.seed,
       };
       this.placedModules = placeModules(this.moduleRegistry, placerCtx);
     }
 
-    // 8. Water features
-    this.generateWater(bounds);
-
-    // 9. Path network (tiles placed with default sprites)
+    // 8. Path network (tiles placed with default sprites)
     this.generatePaths();
 
-    // 10. Unified autotile pass — resolves sprites for ALL terrain types
+    // 9. Unified autotile pass — resolves sprites for ALL terrain types
     this.autoTileAllTerrain();
 
     // ── PHASE 2: WORLD OBJECTS ──
@@ -368,10 +385,16 @@ export class WorldGenerator {
   // ─── Ground Generation ────────────────────────────────────────────────────
 
   /**
-   * Fill the ground layer with noise-based grass variation.
-   * Reads defaultTile and variants from terrain config.
+   * Fill terrain in two layers:
+   * - LAYER_GROUND (0): water everywhere (base)
+   * - LAYER_TERRAIN (1): grass on the island shape (autotiled edges show water beneath)
    */
-  private fillGround(bounds: WorldBounds): void {
+  private fillGround(bounds: WorldBounds, plotRects: PlotRect[]): void {
+    const waterConfig = this.autotiler.getTerrainConfig('water');
+    const waterTile = waterConfig?.defaultTile || 't_0_0';
+    const waterSheet = waterConfig?.spritesheet || 'water';
+    const waterSprite = `${waterSheet}/${waterTile}`;
+
     const grassConfig = this.autotiler.getTerrainConfig('grass');
     const defaultTile = grassConfig?.defaultTile || 't_1_1';
     const variants = grassConfig?.variants || [];
@@ -379,18 +402,21 @@ export class WorldGenerator {
 
     for (let y = bounds.minY; y <= bounds.maxY; y++) {
       for (let x = bounds.minX; x <= bounds.maxX; x++) {
+        // Layer 0: water everywhere
+        this.map.setTile(x, y, 'water', waterSprite, 0, LAYER_GROUND);
+
+        // Layer 1: grass only on island
+        if (!this.isLandTile(x, y, bounds, plotRects)) continue;
+
         let variant: number;
         let spriteId: string;
 
         if (variants.length > 0) {
-          // Two-octave noise for organic grass variation
           const n = fbmNoise(x * 0.15, y * 0.15, 2);
-
           if (n < 0.5) {
             variant = 0;
             spriteId = `${sheet}/${defaultTile}`;
           } else {
-            // Distribute noise across available variants
             const vi = Math.min(variants.length - 1, Math.floor((n - 0.5) * 2 * variants.length));
             variant = vi + 1;
             spriteId = `${sheet}/${variants[vi]}`;
@@ -400,9 +426,39 @@ export class WorldGenerator {
           spriteId = `${sheet}/${defaultTile}`;
         }
 
-        this.map.setTile(x, y, 'grass', spriteId, variant, LAYER_GROUND);
+        this.map.setTile(x, y, 'grass', spriteId, variant, LAYER_TERRAIN);
       }
     }
+  }
+
+  /**
+   * Determine if a tile is part of the island landmass.
+   * Guaranteed: all plot rects (with margin) are land.
+   * Edges: noise-modulated distance falloff creates organic coastline.
+   */
+  private isLandTile(x: number, y: number, bounds: WorldBounds, plotRects: PlotRect[]): boolean {
+    // Any tile near a plot is always land (plot + fence + 1 tile buffer)
+    for (const plot of plotRects) {
+      if (x >= plot.x - 3 && x <= plot.x + plot.width + 2 &&
+          y >= plot.y - 3 && y <= plot.y + plot.height + 2) {
+        return true;
+      }
+    }
+
+    // Normalized distance from world center (0 at center, ~1 at edges)
+    const cx = (bounds.minX + bounds.maxX) / 2;
+    const cy = (bounds.minY + bounds.maxY) / 2;
+    const hw = Math.max(1, (bounds.maxX - bounds.minX) / 2);
+    const hh = Math.max(1, (bounds.maxY - bounds.minY) / 2);
+    const dx = (x - cx) / hw;
+    const dy = (y - cy) / hh;
+    const distFromCenter = Math.sqrt(dx * dx + dy * dy);
+
+    // Noise-modulated falloff for organic coastline
+    const noiseVal = noise2d(x * 0.12, y * 0.12);
+    const threshold = 0.85 + noiseVal * 0.25;
+
+    return distFromCenter < threshold;
   }
 
   // ─── Plot Spacing & Jitter ──────────────────────────────────────────────
@@ -690,7 +746,7 @@ export class WorldGenerator {
 
     for (let y = 0; y < height; y++) {
       for (let x = 0; x < width; x++) {
-        this.map.setTile(startX + x, startY + y, 'tilled', spriteId, 0, LAYER_GROUND);
+        this.map.setTile(startX + x, startY + y, 'tilled', spriteId, 0, LAYER_TERRAIN);
       }
     }
   }
@@ -944,18 +1000,18 @@ export class WorldGenerator {
    * Place a single path tile if the location is open (grass or water-adjacent)
    */
   private placePath(x: number, y: number): void {
-    const groundTile = this.map.getTile(x, y, LAYER_GROUND);
-    // Only place on grass, not on tilled dirt or water
-    if (!groundTile || groundTile.type !== 'grass') return;
-
-    // Don't place on fence or crop locations
     const terrainTile = this.map.getTile(x, y, LAYER_TERRAIN);
-    if (terrainTile) return;
+    // Only place on grass, not on tilled dirt, fences, or water
+    if (!terrainTile || terrainTile.type !== 'grass') return;
+
+    // Don't place on crop locations
+    const cropTile = this.map.getTile(x, y, LAYER_CROPS);
+    if (cropTile) return;
 
     const pathConfig = this.autotiler.getTerrainConfig('path');
     const pathTile = pathConfig?.defaultTile || 't_0_0';
     const pathSheet = pathConfig?.spritesheet || 'paths';
-    this.map.setTile(x, y, 'path', `${pathSheet}/${pathTile}`, 0, LAYER_GROUND);
+    this.map.setTile(x, y, 'path', `${pathSheet}/${pathTile}`, 0, LAYER_TERRAIN);
   }
 
 
@@ -968,7 +1024,7 @@ export class WorldGenerator {
 
     // Build set of path positions
     for (const tile of allTiles) {
-      if (tile.type === 'path' && tile.layer === LAYER_GROUND) {
+      if (tile.type === 'path' && tile.layer === LAYER_TERRAIN) {
         pathPositions.add(`${tile.x},${tile.y}`);
       }
     }
@@ -1000,23 +1056,23 @@ export class WorldGenerator {
   ]);
 
   /**
-   * Unified autotile pass for all terrain types on the ground layer.
+   * Unified autotile pass for all terrain types on the terrain layer.
    * Resolves sprites based on neighbor bitmask configuration.
    * Tiles with "" bitmask entries (e.g., interior grass) keep their existing sprites.
    */
   private autoTileAllTerrain(): void {
     const terrainTiles = this.map.getAllTiles()
-      .filter(t => t.layer === LAYER_GROUND && WorldGenerator.TERRAIN_TYPES.has(t.type));
+      .filter(t => t.layer === LAYER_TERRAIN && WorldGenerator.TERRAIN_TYPES.has(t.type));
 
     const getTileType = (x: number, y: number, layer?: number): TileType | null => {
-      const tile = this.map.getTile(x, y, layer ?? 0);
+      const tile = this.map.getTile(x, y, layer ?? LAYER_TERRAIN);
       return tile?.type ?? null;
     };
 
     const setSprite = (x: number, y: number, spriteId: string): void => {
-      const tile = this.map.getTile(x, y, LAYER_GROUND);
+      const tile = this.map.getTile(x, y, LAYER_TERRAIN);
       if (tile) {
-        this.map.setTile(x, y, tile.type, spriteId, tile.variant, LAYER_GROUND);
+        this.map.setTile(x, y, tile.type, spriteId, tile.variant, LAYER_TERRAIN);
       }
     };
 
@@ -1030,67 +1086,47 @@ export class WorldGenerator {
   // ─── Clustered Decoration System ──────────────────────────────────────────
 
   /**
-   * Place decorations with contextual clustering.
+   * Place ground-level decorations (grass tufts, flowers, butterflies).
+   * Mushrooms, stones, and bush clusters are handled by the module system.
    */
   private placeDecorations(bounds: WorldBounds): void {
-    // Collect contextual info for clustering
-    const waterPositions = new Set<string>();
     const pathPositions = new Set<string>();
 
     for (const tile of this.map.getAllTiles()) {
-      if (tile.type === 'water') waterPositions.add(`${tile.x},${tile.y}`);
       if (tile.type === 'path') pathPositions.add(`${tile.x},${tile.y}`);
     }
 
-    // Pre-compute flower seed points near water and paths
+    // Pre-compute flower seed points near paths and island edges
     const flowerSeeds: { x: number; y: number }[] = [];
-    const mushroomSeeds: { x: number; y: number }[] = [];
-
-    // Find 3-5 flower seed points near water
-    for (const pos of waterPositions) {
-      const [wx, wy] = pos.split(',').map(Number);
-      const h = intHash(wx * 31 + wy * 17);
-      if ((h % 3) === 0) { // ~33% of water tiles become seeds
-        flowerSeeds.push({ x: wx + ((h >> 4) % 5) - 2, y: wy + ((h >> 8) % 5) - 2 });
+    for (const pos of pathPositions) {
+      const [px, py] = pos.split(',').map(Number);
+      const h = intHash(px * 31 + py * 17);
+      if ((h % 4) === 0) {
+        flowerSeeds.push({ x: px + ((h >> 4) % 5) - 2, y: py + ((h >> 8) % 5) - 2 });
       }
-      if (flowerSeeds.length >= 5) break;
-    }
-
-    // Find 2-3 mushroom clusters near world borders
-    const worldWidth = bounds.maxX - bounds.minX;
-    const worldHeight = bounds.maxY - bounds.minY;
-    for (let i = 0; i < 3; i++) {
-      const h = intHash(i * 7919 + 42);
-      const edgeX = (h % 2 === 0)
-        ? bounds.minX + ((h >> 4) % 4)
-        : bounds.maxX - 3 + ((h >> 4) % 3);
-      const edgeY = (h % 3 === 0)
-        ? bounds.minY + ((h >> 8) % 4)
-        : bounds.maxY - 3 + ((h >> 8) % 3);
-      mushroomSeeds.push({ x: edgeX, y: edgeY });
+      if (flowerSeeds.length >= 8) break;
     }
 
     for (let y = bounds.minY; y <= bounds.maxY; y++) {
       for (let x = bounds.minX; x <= bounds.maxX; x++) {
-        // Only place on open grass tiles
-        const groundTile = this.map.getTile(x, y, LAYER_GROUND);
+        // Only place on open grass tiles (grass is on LAYER_TERRAIN)
         const terrainTile = this.map.getTile(x, y, LAYER_TERRAIN);
         const cropTile = this.map.getTile(x, y, LAYER_CROPS);
 
-        if (!groundTile || groundTile.type !== 'grass') continue;
-        if (terrainTile || cropTile) continue;
+        if (!terrainTile || terrainTile.type !== 'grass') continue;
+        if (cropTile) continue;
 
         const hash = ((x * 31 + y * 17) * 2654435761) >>> 0;
         const n = fbmNoise(x * 0.2, y * 0.2);
 
         // ── Pass 1: Grass tufts (most common, noise-based) ──
-        if (n > 0.55 && (hash % 100) < 8) {
+        if (n > 0.55 && (hash % 100) < 14) {
           const spriteId = (hash % 2 === 0) ? 'biome/grass-tuft-1' : 'biome/grass-tuft-2';
           this.map.setTile(x, y, 'decoration', spriteId, 0, LAYER_CROPS);
           continue;
         }
 
-        // ── Pass 2: Flowers (clustered near water/paths) ──
+        // ── Pass 2: Flowers (clustered near paths and flower seeds) ──
         let nearFlowerSeed = false;
         for (const seed of flowerSeeds) {
           const dist = Math.abs(x - seed.x) + Math.abs(y - seed.y);
@@ -1106,47 +1142,15 @@ export class WorldGenerator {
           this.map.setTile(x, y, 'decoration', 'biome/flower-small', 0, LAYER_CROPS);
           continue;
         }
-        if (nearPath && (hash % 100) < 3) {
+        if (nearPath && (hash % 100) < 7) {
           this.map.setTile(x, y, 'decoration', 'biome/flower-small', 0, LAYER_CROPS);
           continue;
         }
 
-        // ── Pass 3: Mushrooms (clustered near borders) ──
-        let nearMushroomSeed = false;
-        for (const seed of mushroomSeeds) {
-          const dist = Math.abs(x - seed.x) + Math.abs(y - seed.y);
-          if (dist <= 3) { nearMushroomSeed = true; break; }
-        }
-
-        if (nearMushroomSeed && (hash % 100) < 20) {
-          const spriteId = (hash % 2 === 0) ? 'biome/mushroom-red' : 'biome/mushroom-brown';
-          this.map.setTile(x, y, 'decoration', spriteId, 0, LAYER_CROPS);
-          continue;
-        }
-
-        // ── Pass 4: Stones (near water edges) ──
-        let nearWater = false;
-        for (const dir of [[-1,0],[1,0],[0,-1],[0,1],[-1,-1],[1,-1],[-1,1],[1,1]]) {
-          if (waterPositions.has(`${x + dir[0]},${y + dir[1]}`)) { nearWater = true; break; }
-        }
-
-        if (nearWater && (hash % 100) < 25) {
-          this.map.setTile(x, y, 'decoration', 'biome/stone-small', 0, LAYER_CROPS);
-          continue;
-        }
-
-        // ── Pass 5: Butterflies (only near existing flower decorations, max 5) ──
-        // Check if we already placed a flower nearby (simple: check if any flower seed is close)
-        if (nearFlowerSeed && (hash % 1000) < 5) {
+        // ── Pass 3: Butterflies (near flower clusters) ──
+        if (nearFlowerSeed && (hash % 1000) < 12) {
           this.map.setTile(x, y, 'decoration', 'biome/butterfly-1', 0, LAYER_CROPS);
           continue;
-        }
-
-        // ── Sparse fallback: occasional decoration anywhere ──
-        if ((hash % 100) < 1) {
-          const idx = hash % 3;
-          const sprites = ['biome/grass-tuft-1', 'biome/stone-small', 'biome/flower-small'];
-          this.map.setTile(x, y, 'decoration', sprites[idx], 0, LAYER_CROPS);
         }
       }
     }
