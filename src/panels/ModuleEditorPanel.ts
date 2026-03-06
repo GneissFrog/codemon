@@ -178,6 +178,12 @@ export class ModuleEditorPanel implements vscode.WebviewViewProvider {
     .layer-row.active { color: var(--pixel-success); font-weight: bold; }
     .layer-row .layer-name { cursor: pointer; flex: 1; }
     .layer-row .layer-name:hover { text-decoration: underline; }
+    .clear-layer-btn {
+      background: none; border: none; color: var(--pixel-error);
+      cursor: pointer; font-size: 9px; padding: 0 2px;
+      opacity: 0.5; margin-left: auto;
+    }
+    .clear-layer-btn:hover { opacity: 1; }
 
     /* ─── Properties ─── */
     .prop-row {
@@ -208,6 +214,50 @@ export class ModuleEditorPanel implements vscode.WebviewViewProvider {
     .empty-state {
       text-align: center; color: var(--pixel-muted);
       padding: 20px; font-size: 11px;
+    }
+
+    /* ─── Placed Tiles List ─── */
+    .tile-list-container {
+      max-height: 200px; overflow-y: auto;
+      border: 1px solid var(--pixel-border);
+      margin-bottom: 6px; background: var(--pixel-bg);
+    }
+    #tile-list { padding: 2px; }
+    .tile-layer-group {
+      margin-bottom: 4px;
+    }
+    .tile-layer-header {
+      font-size: 9px; color: var(--pixel-accent);
+      padding: 2px 4px; background: var(--pixel-bg-light);
+      border-bottom: 1px solid var(--pixel-border);
+      display: flex; justify-content: space-between;
+    }
+    .tile-entry {
+      display: flex; align-items: center; gap: 4px;
+      padding: 2px 4px; font-size: 9px;
+      border-bottom: 1px solid var(--pixel-border);
+    }
+    .tile-entry:last-child { border-bottom: none; }
+    .tile-entry:hover { background: var(--pixel-bg-light); }
+    .tile-entry canvas {
+      width: 16px; height: 16px; image-rendering: pixelated;
+      border: 1px solid var(--pixel-border);
+    }
+    .tile-entry .tile-pos {
+      color: var(--pixel-muted); min-width: 28px;
+    }
+    .tile-entry .tile-name {
+      flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .tile-entry .tile-remove {
+      background: none; border: none; color: var(--pixel-error);
+      cursor: pointer; font-size: 10px; padding: 0 2px;
+      opacity: 0.6;
+    }
+    .tile-entry .tile-remove:hover { opacity: 1; }
+    .tile-empty {
+      text-align: center; color: var(--pixel-muted);
+      padding: 8px; font-size: 9px;
     }
 
     /* ─── Hover Tooltip ─── */
@@ -255,15 +305,24 @@ export class ModuleEditorPanel implements vscode.WebviewViewProvider {
       <div class="layer-row active" data-layer="0">
         <input type="checkbox" checked data-vis="0">
         <span class="layer-name" data-set="0">0 Ground</span>
+        <button class="clear-layer-btn" data-clear="0" title="Clear layer">x</button>
       </div>
       <div class="layer-row" data-layer="1">
         <input type="checkbox" checked data-vis="1">
         <span class="layer-name" data-set="1">1 Terrain</span>
+        <button class="clear-layer-btn" data-clear="1" title="Clear layer">x</button>
       </div>
       <div class="layer-row" data-layer="2">
         <input type="checkbox" checked data-vis="2">
         <span class="layer-name" data-set="2">2 Objects</span>
+        <button class="clear-layer-btn" data-clear="2" title="Clear layer">x</button>
       </div>
+    </div>
+
+    <!-- Placed Tiles List -->
+    <div class="section-label">Placed Tiles <span id="tile-count">(0)</span></div>
+    <div class="tile-list-container">
+      <div id="tile-list"></div>
     </div>
 
     <!-- Tile Canvas -->
@@ -359,6 +418,7 @@ export class ModuleEditorPanel implements vscode.WebviewViewProvider {
           initPalette();
           initModuleSelect();
           renderCanvas();
+          renderTileList();
           break;
         case 'moduleSaved':
           break;
@@ -484,6 +544,7 @@ export class ModuleEditorPanel implements vscode.WebviewViewProvider {
       updateSizeLabel();
       resizeCanvas();
       renderCanvas();
+      renderTileList();
       renderConnectionList();
     }
 
@@ -506,6 +567,7 @@ export class ModuleEditorPanel implements vscode.WebviewViewProvider {
       updateSizeLabel();
       resizeCanvas();
       renderCanvas();
+      renderTileList();
       renderConnectionList();
     }
 
@@ -549,6 +611,23 @@ export class ModuleEditorPanel implements vscode.WebviewViewProvider {
         activeLayer = parseInt(el.dataset.set);
         document.querySelectorAll('.layer-row').forEach(r => r.classList.remove('active'));
         el.closest('.layer-row').classList.add('active');
+      });
+    });
+
+    // Clear layer buttons
+    document.querySelectorAll('.clear-layer-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const layer = parseInt(e.target.dataset.clear);
+        // Delete all tiles on this layer
+        const keysToDelete = [];
+        for (const key of moduleTiles.keys()) {
+          const [, , l] = key.split(',').map(Number);
+          if (l === layer) keysToDelete.push(key);
+        }
+        keysToDelete.forEach(k => moduleTiles.delete(k));
+        renderCanvas();
+        renderTileList();
       });
     });
 
@@ -659,6 +738,7 @@ export class ModuleEditorPanel implements vscode.WebviewViewProvider {
       const key = x + ',' + y + ',' + activeLayer;
       moduleTiles.set(key, { type: selectedTileType, spriteId: selectedSpriteId });
       renderCanvas();
+      renderTileList();
     });
 
     canvas.addEventListener('contextmenu', (e) => {
@@ -669,6 +749,7 @@ export class ModuleEditorPanel implements vscode.WebviewViewProvider {
       const key = x + ',' + y + ',' + activeLayer;
       moduleTiles.delete(key);
       renderCanvas();
+      renderTileList();
     });
 
     // Hover info
@@ -695,6 +776,120 @@ export class ModuleEditorPanel implements vscode.WebviewViewProvider {
     canvas.addEventListener('mouseleave', () => {
       hoverInfo.style.display = 'none';
     });
+
+    // ─── Placed Tiles List ──────────────────────────────────────────────
+    async function renderTileList() {
+      const listEl = document.getElementById('tile-list');
+      const countEl = document.getElementById('tile-count');
+
+      // Group tiles by layer
+      const byLayer = { 0: [], 1: [], 2: [] };
+      for (const [key, tile] of moduleTiles) {
+        const [x, y, layer] = key.split(',').map(Number);
+        if (byLayer[layer]) {
+          byLayer[layer].push({ x, y, layer, key, ...tile });
+        }
+      }
+
+      // Sort each layer by position
+      for (let l = 0; l <= 2; l++) {
+        byLayer[l].sort((a, b) => (a.y * 100 + a.x) - (b.y * 100 + b.x));
+      }
+
+      const totalTiles = Object.values(byLayer).flat().length;
+      countEl.textContent = '(' + totalTiles + ')';
+
+      if (totalTiles === 0) {
+        listEl.innerHTML = '<div class="tile-empty">No tiles placed yet</div>';
+        return;
+      }
+
+      const layerNames = ['Ground', 'Terrain', 'Objects'];
+      let html = '';
+
+      for (let l = 0; l <= 2; l++) {
+        if (byLayer[l].length === 0) continue;
+
+        html += '<div class="tile-layer-group">';
+        html += '<div class="tile-layer-header"><span>L' + l + ' ' + layerNames[l] + '</span><span>' + byLayer[l].length + '</span></div>';
+
+        for (const tile of byLayer[l]) {
+          html += '<div class="tile-entry" data-key="' + tile.key + '">';
+          html += '<canvas width="16" height="16" data-sprite="' + tile.spriteId + '"></canvas>';
+          html += '<span class="tile-pos">(' + tile.x + ',' + tile.y + ')</span>';
+          html += '<span class="tile-name">' + tile.spriteId + '</span>';
+          html += '<button class="tile-remove" data-key="' + tile.key + '" title="Remove tile">x</button>';
+          html += '</div>';
+        }
+        html += '</div>';
+      }
+
+      listEl.innerHTML = html;
+
+      // Render sprite previews
+      for (const entry of listEl.querySelectorAll('.tile-entry canvas')) {
+        const spriteId = entry.dataset.sprite;
+        const [sheetName, spriteName] = spriteId.split('/');
+        const sheet = spritesheets[sheetName];
+        if (!sheet) continue;
+        const sprite = sheet.sprites[spriteName];
+        if (!sprite) continue;
+
+        const img = await getSheetImage(sheetName);
+        if (!img) continue;
+
+        const sctx = entry.getContext('2d');
+        sctx.imageSmoothingEnabled = false;
+        sctx.drawImage(img, sprite.x, sprite.y, sprite.w, sprite.h, 0, 0, 16, 16);
+      }
+
+      // Wire up remove buttons
+      listEl.querySelectorAll('.tile-remove').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          const key = e.target.dataset.key;
+          moduleTiles.delete(key);
+          renderCanvas();
+          renderTileList();
+        });
+      });
+
+      // Click on entry to select and highlight on canvas
+      listEl.querySelectorAll('.tile-entry').forEach(entry => {
+        entry.addEventListener('click', (e) => {
+          if (e.target.classList.contains('tile-remove')) return;
+          const key = entry.dataset.key;
+          const [x, y, layer] = key.split(',').map(Number);
+
+          // Set active layer
+          activeLayer = layer;
+          document.querySelectorAll('.layer-row').forEach(r => {
+            r.classList.toggle('active', parseInt(r.dataset.layer) === layer);
+          });
+
+          // Flash the tile on canvas
+          flashTile(x, y);
+        });
+      });
+    }
+
+    // Flash animation to highlight a tile
+    function flashTile(fx, fy) {
+      const s = TILE_SIZE * SCALE;
+      let flashCount = 0;
+      const flashInterval = setInterval(() => {
+        renderCanvas().then(() => {
+          if (flashCount % 2 === 0) {
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+            ctx.fillRect(fx * s, fy * s, s, s);
+          }
+          flashCount++;
+          if (flashCount >= 6) {
+            clearInterval(flashInterval);
+            renderCanvas();
+          }
+        });
+      }, 100);
+    }
 
     // ─── Connection Points ─────────────────────────────────────────────
     function toggleConnectionPoint(x, y) {

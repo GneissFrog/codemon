@@ -107,6 +107,12 @@ export class SpriteConfigPanel implements vscode.WebviewViewProvider {
             agentLightColor?: number;
           });
           break;
+        case 'browseAsepriteJson':
+          await this._browseForAsepriteJson();
+          break;
+        case 'updateAsepriteConfig':
+          await this._updateAsepriteConfig(message.data as { sheetName: string; asepriteConfig: { jsonFile: string; tags?: string[] } | null });
+          break;
       }
     });
   }
@@ -608,6 +614,83 @@ export class SpriteConfigPanel implements vscode.WebviewViewProvider {
     }
   }
 
+  /**
+   * Browse for an Aseprite JSON file and return the relative path
+   */
+  private async _browseForAsepriteJson(): Promise<void> {
+    if (!this._view) return;
+
+    const result = await vscode.window.showOpenDialog({
+      canSelectFiles: true,
+      canSelectFolders: false,
+      canSelectMany: false,
+      filters: { 'Aseprite JSON': ['json'], 'All Files': ['*'] },
+      defaultUri: vscode.Uri.joinPath(this._extensionUri, 'assets', 'sprites'),
+    });
+
+    if (result && result[0]) {
+      // Convert absolute path to relative path from extension root
+      const absolutePath = result[0].fsPath;
+      const extensionPath = this._extensionUri.fsPath;
+      let relativePath = absolutePath.replace(extensionPath, '');
+      // Normalize path separators and remove leading slash
+      relativePath = relativePath.replace(/^[\/\\]/, '').replace(/\\/g, '/');
+
+      this._view.webview.postMessage({
+        type: 'selectedAsepriteJson',
+        path: relativePath,
+      });
+    }
+  }
+
+  /**
+   * Update the Aseprite config for a spritesheet
+   */
+  private async _updateAsepriteConfig(data: { sheetName: string; asepriteConfig: { jsonFile: string; tags?: string[] } | null }): Promise<void> {
+    if (!this._view) return;
+
+    try {
+      const manifest = await this._readManifest();
+      const sheets = manifest.spritesheets as Record<string, Record<string, unknown>>;
+
+      if (!sheets[data.sheetName]) {
+        vscode.window.showErrorMessage(`Spritesheet "${data.sheetName}" not found`);
+        return;
+      }
+
+      if (data.asepriteConfig) {
+        // Check if the JSON file exists
+        const jsonUri = vscode.Uri.joinPath(this._extensionUri, data.asepriteConfig.jsonFile);
+        try {
+          await vscode.workspace.fs.stat(jsonUri);
+        } catch {
+          vscode.window.showErrorMessage(`Aseprite JSON file not found: ${data.asepriteConfig.jsonFile}`);
+          return;
+        }
+
+        sheets[data.sheetName].aseprite = data.asepriteConfig;
+        vscode.window.showInformationMessage(`Linked Aseprite data to "${data.sheetName}"`);
+      } else {
+        // Remove Aseprite config
+        delete sheets[data.sheetName].aseprite;
+        vscode.window.showInformationMessage(`Removed Aseprite data from "${data.sheetName}"`);
+      }
+
+      await this._writeManifest(manifest);
+
+      // Reload assets and refresh
+      const loader = getAssetLoader(this._extensionUri);
+      loader.dispose();
+      await loader.load();
+      await this._sendAssets();
+      await getGameViewPanel(this._extensionUri).refreshAssets();
+
+    } catch (error) {
+      console.error('[SpriteConfig] Failed to update Aseprite config:', error);
+      vscode.window.showErrorMessage(`Failed to update Aseprite config: ${error}`);
+    }
+  }
+
   private _getHtmlForWebview(webview: vscode.Webview): string {
     const nonce = getNonce();
 
@@ -732,6 +815,12 @@ export class SpriteConfigPanel implements vscode.WebviewViewProvider {
       background: var(--pixel-accent);
       color: var(--pixel-bg);
       border-radius: 2px;
+    }
+
+    .spritesheet-badge.aseprite {
+      background: #7d9f5a;  /* Aseprite green */
+      color: #fff;
+    }
       text-transform: uppercase;
       letter-spacing: 0.5px;
     }
@@ -865,6 +954,93 @@ export class SpriteConfigPanel implements vscode.WebviewViewProvider {
       padding: 8px;
       background: var(--pixel-bg);
       border: 1px solid var(--pixel-border);
+    }
+
+    /* Aseprite Config Panel */
+    .aseprite-config-panel {
+      padding: 8px;
+      background: var(--pixel-bg-light);
+      border: 1px solid var(--pixel-border);
+    }
+
+    .aseprite-status {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+
+    .aseprite-status .status-label {
+      font-size: 9px;
+      color: var(--pixel-muted);
+    }
+
+    .aseprite-status .status-value {
+      font-size: 9px;
+      color: var(--pixel-fg);
+    }
+
+    .aseprite-status .status-value.linked {
+      color: #7d9f5a;  /* Aseprite green */
+    }
+
+    .aseprite-json-path {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      margin-bottom: 8px;
+      font-size: 9px;
+    }
+
+    .aseprite-json-path .path-label {
+      color: var(--pixel-muted);
+      flex-shrink: 0;
+    }
+
+    .aseprite-json-path .path-value {
+      color: var(--pixel-fg);
+      word-break: break-all;
+      font-family: monospace;
+    }
+
+    .aseprite-tags {
+      margin-bottom: 8px;
+    }
+
+    .aseprite-tags .tags-label {
+      font-size: 9px;
+      color: var(--pixel-muted);
+      display: block;
+      margin-bottom: 4px;
+    }
+
+    .aseprite-tags .tags-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+    }
+
+    .aseprite-tag {
+      font-size: 8px;
+      padding: 2px 6px;
+      background: #7d9f5a;  /* Aseprite green */
+      color: #fff;
+      border-radius: 2px;
+    }
+
+    .aseprite-actions {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+
+    .aseprite-help {
+      font-size: 8px;
+      color: var(--pixel-muted);
+      padding: 6px;
+      background: var(--pixel-bg);
+      border: 1px solid var(--pixel-border);
+      line-height: 1.4;
     }
 
     .selected-sprite-title {
@@ -1645,6 +1821,34 @@ export class SpriteConfigPanel implements vscode.WebviewViewProvider {
       </div>
     </div>
 
+    <!-- Aseprite Config Section -->
+    <div id="aseprite-section" style="display: none;">
+      <div class="section-title" data-section="aseprite-config">Aseprite Animation</div>
+      <div class="section-content" data-section="aseprite-config">
+        <div class="aseprite-config-panel">
+          <div class="aseprite-status" id="aseprite-status">
+            <span class="status-label">Status:</span>
+            <span class="status-value" id="aseprite-status-value">Not configured</span>
+          </div>
+          <div class="aseprite-json-path" id="aseprite-json-path" style="display: none;">
+            <span class="path-label">JSON:</span>
+            <span class="path-value" id="aseprite-json-value">-</span>
+          </div>
+          <div class="aseprite-tags" id="aseprite-tags-section" style="display: none;">
+            <span class="tags-label">Tags:</span>
+            <div class="tags-list" id="aseprite-tags-list">-</div>
+          </div>
+          <div class="aseprite-actions">
+            <button class="action-btn" id="browse-aseprite">Link JSON File</button>
+            <button class="action-btn danger" id="unlink-aseprite" style="display: none;">Unlink</button>
+          </div>
+          <div class="aseprite-help">
+            Link an Aseprite-exported JSON file to automatically create animations from tags. Export from Aseprite: File → Export Sprite Sheet → JSON Data (with Tags checked)
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- Character Preview Section (shown for character spritesheets) -->
     <div id="character-section" style="display: none;">
       <div class="section-title" data-section="character-preview">Character Preview</div>
@@ -1992,12 +2196,25 @@ export class SpriteConfigPanel implements vscode.WebviewViewProvider {
           const purposeLabel = PURPOSES.find(p => p.value === assignedPurpose)?.label || assignedPurpose;
           nameHtml += \` <span class="spritesheet-badge">\${purposeLabel}</span>\`;
         }
+        // Add Aseprite badge if this sheet has Aseprite data
+        if (sheet.asepriteData) {
+          nameHtml += \` <span class="spritesheet-badge aseprite">Aseprite</span>\`;
+        }
         nameHtml += \`</div>\`;
 
-        info.innerHTML = \`
-          \${nameHtml}
-          <div class="spritesheet-count">\${Object.keys(sheet.sprites).length} sprites</div>
-        \`;
+        // Build info HTML with Aseprite tag count
+        let infoHtml = nameHtml;
+        const spriteCount = Object.keys(sheet.sprites).length;
+        infoHtml += \`<div class="spritesheet-count">\${spriteCount} sprites\`;
+
+        // Show Aseprite tag info
+        if (sheet.asepriteData && sheet.asepriteData.meta && sheet.asepriteData.meta.frameTags) {
+          const tagCount = sheet.asepriteData.meta.frameTags.length;
+          infoHtml += \` · \${tagCount} animation tags\`;
+        }
+        infoHtml += \`</div>\`;
+
+        info.innerHTML = infoHtml;
 
         item.appendChild(img);
         item.appendChild(info);
@@ -2050,6 +2267,69 @@ export class SpriteConfigPanel implements vscode.WebviewViewProvider {
 
       // Show/hide character preview section
       updateCharacterSection();
+
+      // Show/hide Aseprite config section
+      updateAsepriteSection();
+    }
+
+    // ─── Aseprite Config Section ───────────────────────────────────────────
+
+    function updateAsepriteSection() {
+      const asepriteSection = document.getElementById('aseprite-section');
+      if (!asepriteSection || !currentSheet) {
+        if (asepriteSection) asepriteSection.style.display = 'none';
+        return;
+      }
+
+      const sheet = spritesheets[currentSheet];
+      if (!sheet) {
+        asepriteSection.style.display = 'none';
+        return;
+      }
+
+      // Show the section for all sheets
+      asepriteSection.style.display = 'block';
+
+      const statusValue = document.getElementById('aseprite-status-value');
+      const jsonPathSection = document.getElementById('aseprite-json-path');
+      const jsonValue = document.getElementById('aseprite-json-value');
+      const tagsSection = document.getElementById('aseprite-tags-section');
+      const tagsList = document.getElementById('aseprite-tags-list');
+      const unlinkBtn = document.getElementById('unlink-aseprite');
+
+      if (sheet.asepriteData) {
+        // Aseprite is configured
+        if (statusValue) {
+          statusValue.textContent = 'Linked';
+          statusValue.classList.add('linked');
+        }
+        if (jsonPathSection) jsonPathSection.style.display = 'flex';
+        if (jsonValue) jsonValue.textContent = sheet.aseprite?.jsonFile || 'Unknown';
+
+        // Show tags from Aseprite data
+        if (tagsSection && sheet.asepriteData.meta?.frameTags) {
+          tagsSection.style.display = 'block';
+          const tags = sheet.asepriteData.meta.frameTags;
+          if (tagsList) {
+            tagsList.innerHTML = tags.map(tag =>
+              \`<span class="aseprite-tag" title="Frames \${tag.from}-\${tag.to}">\${tag.name}</span>\`
+            ).join('');
+          }
+        } else if (tagsSection) {
+          tagsSection.style.display = 'none';
+        }
+
+        if (unlinkBtn) unlinkBtn.style.display = 'inline-block';
+      } else {
+        // Aseprite not configured
+        if (statusValue) {
+          statusValue.textContent = 'Not configured';
+          statusValue.classList.remove('linked');
+        }
+        if (jsonPathSection) jsonPathSection.style.display = 'none';
+        if (tagsSection) tagsSection.style.display = 'none';
+        if (unlinkBtn) unlinkBtn.style.display = 'none';
+      }
     }
 
     // ─── Character Preview ───────────────────────────────────────────────
@@ -2125,6 +2405,92 @@ export class SpriteConfigPanel implements vscode.WebviewViewProvider {
         stopCharacterAnimation();
       }
     }
+
+    // ─── Aseprite Config Section ───────────────────────────────────────────
+
+    function updateAsepriteSection() {
+      const asepriteSection = document.getElementById('aseprite-section');
+      const asepriteStatusValue = document.getElementById('aseprite-status-value');
+      const asepriteJsonPath = document.getElementById('aseprite-json-path');
+      const asepriteJsonValue = document.getElementById('aseprite-json-value');
+      const asepriteTagsSection = document.getElementById('aseprite-tags-section');
+      const asepriteTagsList = document.getElementById('aseprite-tags-list');
+      const unlinkBtn = document.getElementById('unlink-aseprite');
+      const linkBtn = document.getElementById('browse-aseprite');
+
+      if (!currentSheet) {
+        asepriteSection.style.display = 'none';
+        return;
+      }
+
+      const sheet = spritesheets[currentSheet];
+      asepriteSection.style.display = 'block';
+
+      if (sheet.asepriteData) {
+        // Aseprite is linked
+        asepriteStatusValue.textContent = 'Linked';
+        asepriteStatusValue.classList.add('linked');
+
+        // Show JSON path
+        asepriteJsonPath.style.display = 'flex';
+        asepriteJsonValue.textContent = sheet.asepriteData.meta?.image || 'Unknown';
+
+        // Show tags
+        asepriteTagsSection.style.display = 'block';
+        const tags = sheet.asepriteData.meta?.frameTags || [];
+        asepriteTagsList.innerHTML = tags.map(tag =>
+          \`<span class="aseprite-tag" title="\${tag.direction}">\${tag.name}</span>\`
+        ).join('');
+
+        // Show unlink button, update link button text
+        unlinkBtn.style.display = 'inline-block';
+        linkBtn.textContent = 'Change JSON File';
+      } else {
+        // No Aseprite linked
+        asepriteStatusValue.textContent = 'Not configured';
+        asepriteStatusValue.classList.remove('linked');
+
+        // Hide JSON path
+        asepriteJsonPath.style.display = 'none';
+
+        // Hide tags
+        asepriteTagsSection.style.display = 'none';
+
+        // Hide unlink button, update link button text
+        unlinkBtn.style.display = 'none';
+        linkBtn.textContent = 'Link JSON File';
+      }
+    }
+
+    // Browse Aseprite JSON button
+    document.getElementById('browse-aseprite').onclick = () => {
+      vscode.postMessage({ type: 'browseAsepriteJson' });
+    };
+
+    // Unlink Aseprite button
+    document.getElementById('unlink-aseprite').onclick = () => {
+      if (confirm('Unlink Aseprite JSON? Animations will revert to manual configuration.')) {
+        vscode.postMessage({
+          type: 'updateAsepriteConfig',
+          data: { sheetName: currentSheet, asepriteConfig: null }
+        });
+      }
+    };
+
+    // Handle selected Aseprite JSON path from extension
+    window.addEventListener('message', (event) => {
+      const message = event.data;
+      if (message.type === 'selectedAsepriteJsonPath' || message.type === 'selectedAsepriteJson') {
+        // Update the Aseprite config for current sheet
+        vscode.postMessage({
+          type: 'updateAsepriteConfig',
+          data: {
+            sheetName: currentSheet,
+            asepriteConfig: { jsonFile: message.path }
+          }
+        });
+      }
+    });
 
     function updateFrameButtons() {
       const frameBtns = document.getElementById('frame-btns');

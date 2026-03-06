@@ -8,7 +8,8 @@ export const TILE_SIZE = 16; // Base tile size in pixels
 export const RENDER_SCALE = 1; // Optional downscaling for performance
 export const SCALED_TILE = TILE_SIZE * RENDER_SCALE;
 
-export type TileType = 'grass' | 'dirt' | 'tilled' | 'water' | 'path' | 'fence' | 'fence-gate' | 'decoration';
+/** Tile type identifier — config-driven, not a fixed union */
+export type TileType = string;
 
 export interface Tile {
   x: number;

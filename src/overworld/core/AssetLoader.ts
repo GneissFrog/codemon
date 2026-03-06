@@ -10,7 +10,7 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
-import { SpriteManifest, SpritesheetDef, LoadedSpritesheet, LoadedSprite, CharacterConfig, LegacyCharacterConfig, ActionConfig } from './types';
+import { SpriteManifest, SpritesheetDef, LoadedSpritesheet, LoadedSprite, CharacterConfig, LegacyCharacterConfig, ActionConfig, AsepriteConfig } from './types';
 
 // ─── Migration Helpers ───────────────────────────────────────────────────────
 
@@ -117,9 +117,55 @@ export class AssetLoader {
         // Normal map doesn't exist - this is fine, not all spritesheets need them
       }
 
+      // Load Aseprite JSON if configured
+      let asepriteData: import('./types').AsepriteExportData | undefined;
+      let asepriteTags: string[] | undefined;
+      if (def.aseprite) {
+        try {
+          asepriteData = await this.loadAsepriteJson(def.aseprite);
+          asepriteTags = def.aseprite.tags;
+          console.log(`[AssetLoader] Loaded Aseprite data for "${name}": ${Object.keys(asepriteData.frames).length} frames, ${asepriteData.meta.frameTags?.length || 0} tags`);
+        } catch (error) {
+          console.warn(`[AssetLoader] Failed to load Aseprite JSON for "${name}":`, error);
+        }
+      }
+
       // Parse sprite definitions
       const sprites = new Map<string, LoadedSprite>();
 
+      // If we have Aseprite data, extract frames from it
+      if (asepriteData) {
+        for (const [frameName, frameData] of Object.entries(asepriteData.frames)) {
+          sprites.set(frameName, {
+            id: `${name}/${frameName}`,
+            spritesheet: name,
+            x: frameData.frame.x,
+            y: frameData.frame.y,
+            width: frameData.frame.w,
+            height: frameData.frame.h,
+          });
+        }
+      }
+
+      // For terrain tilesets, auto-generate grid-position sprites (t_col_row)
+      if (def.terrainTileset) {
+        const tileSize = def.frameSize.width;
+        for (let row = 0; row < def.grid.rows; row++) {
+          for (let col = 0; col < def.grid.cols; col++) {
+            const spriteName = `t_${col}_${row}`;
+            sprites.set(spriteName, {
+              id: `${name}/${spriteName}`,
+              spritesheet: name,
+              x: col * tileSize,
+              y: row * tileSize,
+              width: tileSize,
+              height: tileSize,
+            });
+          }
+        }
+      }
+
+      // Also load manually defined sprites (can coexist with Aseprite and terrain grids)
       for (const [spriteName, spriteDef] of Object.entries(def.sprites)) {
         // Skip comment entries or non-object values
         if (typeof spriteDef !== 'object' || spriteDef === null) continue;
@@ -141,12 +187,23 @@ export class AssetLoader {
         imageUrl: dataUrl,
         normalMapUrl,
         sprites,
+        asepriteData,
+        asepriteTags,
       });
 
-      console.log(`[AssetLoader] Loaded spritesheet "${name}": ${sprites.size} sprites${normalMapUrl ? ' (+normal map)' : ''}`);
+      console.log(`[AssetLoader] Loaded spritesheet "${name}": ${sprites.size} sprites${normalMapUrl ? ' (+normal map)' : ''}${asepriteData ? ' (+Aseprite)' : ''}`);
     } catch (error) {
       console.warn(`[AssetLoader] Failed to load spritesheet "${name}":`, error);
     }
+  }
+
+  /**
+   * Load and parse an Aseprite JSON export file
+   */
+  private async loadAsepriteJson(config: AsepriteConfig): Promise<import('./types').AsepriteExportData> {
+    const jsonPath = vscode.Uri.joinPath(this.extensionUri, config.jsonFile);
+    const jsonData = await vscode.workspace.fs.readFile(jsonPath);
+    return JSON.parse(jsonData.toString());
   }
 
   /**
@@ -200,6 +257,8 @@ export class AssetLoader {
       sprites: Record<string, { x: number; y: number; w: number; h: number }>;
       isCharacter?: boolean;
       characterConfig?: CharacterConfig;
+      asepriteData?: import('./types').AsepriteExportData;
+      asepriteTags?: string[];
     }> = {};
 
     for (const [name, sheet] of this.spritesheets) {
@@ -231,6 +290,8 @@ export class AssetLoader {
         sprites,
         isCharacter: manifestSheet?.isCharacter,
         characterConfig,
+        asepriteData: sheet.asepriteData,
+        asepriteTags: sheet.asepriteTags,
       };
     }
 
@@ -268,6 +329,8 @@ export interface WebviewAssetData {
     sprites: Record<string, { x: number; y: number; w: number; h: number }>;
     isCharacter?: boolean;
     characterConfig?: CharacterConfig;
+    asepriteData?: import('./types').AsepriteExportData;  // Parsed Aseprite JSON
+    asepriteTags?: string[];  // Tags to filter
   }>;
 }
 

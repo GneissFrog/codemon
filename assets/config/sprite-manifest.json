@@ -18,32 +18,61 @@
   },
   "spritesheets": {
     "claude-actions": {
-      "image": "assets/sprites/characters/Basic Charakter Actions.png",
+      "image": "assets/sprites/characters/Premium Charakter Spritesheet.png",
       "dimensions": {
-        "width": 96,
-        "height": 576
+        "width": 384,
+        "height": 1152
       },
       "frameSize": {
         "width": 16,
         "height": 16
       },
       "grid": {
-        "cols": 6,
-        "rows": 36
+        "cols": 24,
+        "rows": 72
       },
       "isCharacter": true,
       "characterConfig": {
-        "directions": ["down", "up", "left", "right"],
-        "actions": ["hoe", "water", "plant", "harvest", "walk", "idle"],
-        "framesPerAction": 6
+        "directions": [
+          "down",
+          "up",
+          "left",
+          "right"
+        ],
+        "actions": [
+          {
+            "name": "hoe",
+            "frames": 8
+          },
+          {
+            "name": "water",
+            "frames": 10
+          },
+          {
+            "name": "plant",
+            "frames": 6
+          },
+          {
+            "name": "harvest",
+            "frames": 6
+          },
+          {
+            "name": "walk",
+            "frames": 8
+          },
+          {
+            "name": "idle",
+            "frames": 8
+          }
+        ]
       },
       "sprites": {
         "comment": "Layout: 6 action columns, each with 6 direction variants × 6 frames. Directions: down, up, left, right, etc.",
         "hoe-col": {
           "x": 0,
           "y": 0,
-          "w": 16,
-          "h": 16
+          "w": 48,
+          "h": 48
         },
         "water-col": {
           "x": 16,
@@ -1021,62 +1050,280 @@
         "rows": 4
       },
       "sprites": {
-        "cow-0": { "x": 0, "y": 0, "w": 16, "h": 16 },
-        "cow-1": { "x": 16, "y": 0, "w": 16, "h": 16 },
-        "cow-2": { "x": 32, "y": 0, "w": 16, "h": 16 },
-        "cow-3": { "x": 48, "y": 0, "w": 16, "h": 16 },
-        "cow-4": { "x": 64, "y": 0, "w": 16, "h": 16 },
-        "cow-5": { "x": 80, "y": 0, "w": 16, "h": 16 },
-        "cow-6": { "x": 0, "y": 16, "w": 16, "h": 16 },
-        "cow-7": { "x": 16, "y": 16, "w": 16, "h": 16 },
-        "cow-8": { "x": 32, "y": 16, "w": 16, "h": 16 },
-        "cow-9": { "x": 48, "y": 16, "w": 16, "h": 16 },
-        "cow-10": { "x": 64, "y": 16, "w": 16, "h": 16 },
-        "cow-11": { "x": 80, "y": 16, "w": 16, "h": 16 },
-        "cow-12": { "x": 0, "y": 32, "w": 16, "h": 16 },
-        "cow-13": { "x": 16, "y": 32, "w": 16, "h": 16 },
-        "cow-14": { "x": 32, "y": 32, "w": 16, "h": 16 },
-        "cow-15": { "x": 48, "y": 32, "w": 16, "h": 16 },
-        "cow-16": { "x": 64, "y": 32, "w": 16, "h": 16 },
-        "cow-17": { "x": 80, "y": 32, "w": 16, "h": 16 },
-        "cow-18": { "x": 0, "y": 48, "w": 16, "h": 16 },
-        "cow-19": { "x": 16, "y": 48, "w": 16, "h": 16 },
-        "cow-20": { "x": 32, "y": 48, "w": 16, "h": 16 },
-        "cow-21": { "x": 48, "y": 48, "w": 16, "h": 16 },
-        "cow-22": { "x": 64, "y": 48, "w": 16, "h": 16 },
-        "cow-23": { "x": 80, "y": 48, "w": 16, "h": 16 }
+        "cow-0": {
+          "x": 0,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        },
+        "cow-1": {
+          "x": 16,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        },
+        "cow-2": {
+          "x": 32,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        },
+        "cow-3": {
+          "x": 48,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        },
+        "cow-4": {
+          "x": 64,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        },
+        "cow-5": {
+          "x": 80,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        },
+        "cow-6": {
+          "x": 0,
+          "y": 16,
+          "w": 16,
+          "h": 16
+        },
+        "cow-7": {
+          "x": 16,
+          "y": 16,
+          "w": 16,
+          "h": 16
+        },
+        "cow-8": {
+          "x": 32,
+          "y": 16,
+          "w": 16,
+          "h": 16
+        },
+        "cow-9": {
+          "x": 48,
+          "y": 16,
+          "w": 16,
+          "h": 16
+        },
+        "cow-10": {
+          "x": 64,
+          "y": 16,
+          "w": 16,
+          "h": 16
+        },
+        "cow-11": {
+          "x": 80,
+          "y": 16,
+          "w": 16,
+          "h": 16
+        },
+        "cow-12": {
+          "x": 0,
+          "y": 32,
+          "w": 16,
+          "h": 16
+        },
+        "cow-13": {
+          "x": 16,
+          "y": 32,
+          "w": 16,
+          "h": 16
+        },
+        "cow-14": {
+          "x": 32,
+          "y": 32,
+          "w": 16,
+          "h": 16
+        },
+        "cow-15": {
+          "x": 48,
+          "y": 32,
+          "w": 16,
+          "h": 16
+        },
+        "cow-16": {
+          "x": 64,
+          "y": 32,
+          "w": 16,
+          "h": 16
+        },
+        "cow-17": {
+          "x": 80,
+          "y": 32,
+          "w": 16,
+          "h": 16
+        },
+        "cow-18": {
+          "x": 0,
+          "y": 48,
+          "w": 16,
+          "h": 16
+        },
+        "cow-19": {
+          "x": 16,
+          "y": 48,
+          "w": 16,
+          "h": 16
+        },
+        "cow-20": {
+          "x": 32,
+          "y": 48,
+          "w": 16,
+          "h": 16
+        },
+        "cow-21": {
+          "x": 48,
+          "y": 48,
+          "w": 16,
+          "h": 16
+        },
+        "cow-22": {
+          "x": 64,
+          "y": 48,
+          "w": 16,
+          "h": 16
+        },
+        "cow-23": {
+          "x": 80,
+          "y": 48,
+          "w": 16,
+          "h": 16
+        }
       }
     },
     "pig": {
       "image": "assets/sprites/characters/Free Chicken Sprites.png",
-      "dimensions": { "width": 64, "height": 32 },
-      "frameSize": { "width": 16, "height": 16 },
-      "grid": { "cols": 4, "rows": 2 },
+      "dimensions": {
+        "width": 64,
+        "height": 32
+      },
+      "frameSize": {
+        "width": 16,
+        "height": 16
+      },
+      "grid": {
+        "cols": 4,
+        "rows": 2
+      },
       "sprites": {
-        "pig-0": { "x": 0, "y": 0, "w": 16, "h": 16 },
-        "pig-1": { "x": 16, "y": 0, "w": 16, "h": 16 },
-        "pig-2": { "x": 32, "y": 0, "w": 16, "h": 16 },
-        "pig-3": { "x": 48, "y": 0, "w": 16, "h": 16 },
-        "pig-4": { "x": 0, "y": 16, "w": 16, "h": 16 },
-        "pig-5": { "x": 16, "y": 16, "w": 16, "h": 16 },
-        "pig-6": { "x": 32, "y": 16, "w": 16, "h": 16 },
-        "pig-7": { "x": 48, "y": 16, "w": 16, "h": 16 }
+        "pig-0": {
+          "x": 0,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        },
+        "pig-1": {
+          "x": 16,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        },
+        "pig-2": {
+          "x": 32,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        },
+        "pig-3": {
+          "x": 48,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        },
+        "pig-4": {
+          "x": 0,
+          "y": 16,
+          "w": 16,
+          "h": 16
+        },
+        "pig-5": {
+          "x": 16,
+          "y": 16,
+          "w": 16,
+          "h": 16
+        },
+        "pig-6": {
+          "x": 32,
+          "y": 16,
+          "w": 16,
+          "h": 16
+        },
+        "pig-7": {
+          "x": 48,
+          "y": 16,
+          "w": 16,
+          "h": 16
+        }
       }
     },
     "duck": {
       "image": "assets/sprites/characters/Free Chicken Sprites.png",
-      "dimensions": { "width": 64, "height": 32 },
-      "frameSize": { "width": 16, "height": 16 },
-      "grid": { "cols": 4, "rows": 2 },
+      "dimensions": {
+        "width": 64,
+        "height": 32
+      },
+      "frameSize": {
+        "width": 16,
+        "height": 16
+      },
+      "grid": {
+        "cols": 4,
+        "rows": 2
+      },
       "sprites": {
-        "duck-0": { "x": 0, "y": 0, "w": 16, "h": 16 },
-        "duck-1": { "x": 16, "y": 0, "w": 16, "h": 16 },
-        "duck-2": { "x": 32, "y": 0, "w": 16, "h": 16 },
-        "duck-3": { "x": 48, "y": 0, "w": 16, "h": 16 },
-        "duck-4": { "x": 0, "y": 16, "w": 16, "h": 16 },
-        "duck-5": { "x": 16, "y": 16, "w": 16, "h": 16 },
-        "duck-6": { "x": 32, "y": 16, "w": 16, "h": 16 },
-        "duck-7": { "x": 48, "y": 16, "w": 16, "h": 16 }
+        "duck-0": {
+          "x": 0,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        },
+        "duck-1": {
+          "x": 16,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        },
+        "duck-2": {
+          "x": 32,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        },
+        "duck-3": {
+          "x": 48,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        },
+        "duck-4": {
+          "x": 0,
+          "y": 16,
+          "w": 16,
+          "h": 16
+        },
+        "duck-5": {
+          "x": 16,
+          "y": 16,
+          "w": 16,
+          "h": 16
+        },
+        "duck-6": {
+          "x": 32,
+          "y": 16,
+          "w": 16,
+          "h": 16
+        },
+        "duck-7": {
+          "x": 48,
+          "y": 16,
+          "w": 16,
+          "h": 16
+        }
       }
     },
     "grass": {
@@ -1093,80 +1340,8 @@
         "cols": 11,
         "rows": 7
       },
-      "sprites": {
-        "grass-center": {
-          "x": 16,
-          "y": 16,
-          "w": 18,
-          "h": 16
-        },
-        "grass-var1": {
-          "x": 0,
-          "y": 80,
-          "w": 16,
-          "h": 16
-        },
-        "grass-var2": {
-          "x": 16,
-          "y": 80,
-          "w": 16,
-          "h": 16
-        },
-        "grass-var3": {
-          "x": 0,
-          "y": 96,
-          "w": 16,
-          "h": 16
-        },
-        "grass-edge-n": {
-          "x": 16,
-          "y": 0,
-          "w": 16,
-          "h": 16
-        },
-        "grass-edge-s": {
-          "x": 16,
-          "y": 32,
-          "w": 16,
-          "h": 16
-        },
-        "grass-edge-e": {
-          "x": 32,
-          "y": 16,
-          "w": 16,
-          "h": 16
-        },
-        "grass-edge-w": {
-          "x": 0,
-          "y": 16,
-          "w": 16,
-          "h": 16
-        },
-        "grass-corner-ne": {
-          "x": 32,
-          "y": 0,
-          "w": 16,
-          "h": 16
-        },
-        "grass-corner-nw": {
-          "x": 0,
-          "y": 0,
-          "w": 16,
-          "h": 16
-        },
-        "grass-corner-se": {
-          "x": 32,
-          "y": 32,
-          "w": 16,
-          "h": 16
-        },
-        "grass-corner-sw": {
-          "x": 0,
-          "y": 32,
-          "w": 16,
-          "h": 16
-        }
-      }
+      "terrainTileset": true,
+      "sprites": {}
     },
     "tilled-dirt": {
       "image": "assets/sprites/tilesets/Tilled_Dirt.png",
@@ -1182,68 +1357,8 @@
         "cols": 11,
         "rows": 7
       },
-      "sprites": {
-        "dirt-center": {
-          "x": 16,
-          "y": 16,
-          "w": 16,
-          "h": 16
-        },
-        "dirt-var1": {
-          "x": 16,
-          "y": 0,
-          "w": 16,
-          "h": 16
-        },
-        "dirt-edge-n": {
-          "x": 16,
-          "y": 0,
-          "w": 16,
-          "h": 16
-        },
-        "dirt-edge-s": {
-          "x": 16,
-          "y": 32,
-          "w": 16,
-          "h": 16
-        },
-        "dirt-edge-e": {
-          "x": 32,
-          "y": 16,
-          "w": 16,
-          "h": 16
-        },
-        "dirt-edge-w": {
-          "x": 0,
-          "y": 16,
-          "w": 16,
-          "h": 16
-        },
-        "dirt-corner-ne": {
-          "x": 32,
-          "y": 0,
-          "w": 16,
-          "h": 16
-        },
-        "dirt-corner-nw": {
-          "x": 32,
-          "y": 32,
-          "w": 16,
-          "h": 16
-        },
-        "dirt-corner-se": {
-          "x": 16,
-          "y": 48,
-          "w": 16,
-          "h": 16
-        },
-        "dirt-corner-sw": {
-          "x": 32,
-          "y": 48,
-          "w": 16,
-          "h": 16
-        }
-      }
+      "terrainTileset": true,
+      "sprites": {}
     },
     "fences": {
       "image": "assets/sprites/tilesets/Fences.png",
@@ -1324,32 +1439,8 @@
         "cols": 4,
         "rows": 1
       },
-      "sprites": {
-        "water-0": {
-          "x": 0,
-          "y": 0,
-          "w": 16,
-          "h": 16
-        },
-        "water-1": {
-          "x": 16,
-          "y": 0,
-          "w": 16,
-          "h": 16
-        },
-        "water-2": {
-          "x": 32,
-          "y": 0,
-          "w": 16,
-          "h": 16
-        },
-        "water-3": {
-          "x": 48,
-          "y": 0,
-          "w": 16,
-          "h": 16
-        }
-      }
+      "terrainTileset": true,
+      "sprites": {}
     },
     "plants": {
       "image": "assets/sprites/objects/Basic_Plants.png",
@@ -1555,98 +1646,8 @@
         "cols": 4,
         "rows": 4
       },
-      "sprites": {
-        "path-center": {
-          "x": 0,
-          "y": 0,
-          "w": 16,
-          "h": 16
-        },
-        "path-edge-n": {
-          "x": 16,
-          "y": 0,
-          "w": 16,
-          "h": 16
-        },
-        "path-edge-s": {
-          "x": 16,
-          "y": 32,
-          "w": 16,
-          "h": 16
-        },
-        "path-edge-e": {
-          "x": 32,
-          "y": 16,
-          "w": 16,
-          "h": 16
-        },
-        "path-edge-w": {
-          "x": 0,
-          "y": 16,
-          "w": 16,
-          "h": 16
-        },
-        "path-corner-ne": {
-          "x": 32,
-          "y": 0,
-          "w": 16,
-          "h": 16
-        },
-        "path-corner-nw": {
-          "x": 0,
-          "y": 0,
-          "w": 16,
-          "h": 16
-        },
-        "path-corner-se": {
-          "x": 32,
-          "y": 32,
-          "w": 16,
-          "h": 16
-        },
-        "path-corner-sw": {
-          "x": 0,
-          "y": 32,
-          "w": 16,
-          "h": 16
-        },
-        "path-vertical": {
-          "x": 48,
-          "y": 0,
-          "w": 16,
-          "h": 16
-        },
-        "path-horizontal": {
-          "x": 48,
-          "y": 16,
-          "w": 16,
-          "h": 16
-        },
-        "path-end-n": {
-          "x": 0,
-          "y": 48,
-          "w": 16,
-          "h": 16
-        },
-        "path-end-s": {
-          "x": 16,
-          "y": 48,
-          "w": 16,
-          "h": 16
-        },
-        "path-end-e": {
-          "x": 32,
-          "y": 48,
-          "w": 16,
-          "h": 16
-        },
-        "path-end-w": {
-          "x": 48,
-          "y": 48,
-          "w": 16,
-          "h": 16
-        }
-      }
+      "terrainTileset": true,
+      "sprites": {}
     },
     "character-base": {
       "image": "assets/sprites/characters/Basic Charakter Spritesheet.png",
@@ -1817,22 +1818,42 @@
       "loop": true
     },
     "pig-idle": {
-      "frames": ["pig-0", "pig-1", "pig-2", "pig-3"],
+      "frames": [
+        "pig-0",
+        "pig-1",
+        "pig-2",
+        "pig-3"
+      ],
       "fps": 4,
       "loop": true
     },
     "pig-walk": {
-      "frames": ["pig-4", "pig-5", "pig-6", "pig-7"],
+      "frames": [
+        "pig-4",
+        "pig-5",
+        "pig-6",
+        "pig-7"
+      ],
       "fps": 5,
       "loop": true
     },
     "duck-idle": {
-      "frames": ["duck-0", "duck-1", "duck-2", "duck-3"],
+      "frames": [
+        "duck-0",
+        "duck-1",
+        "duck-2",
+        "duck-3"
+      ],
       "fps": 4,
       "loop": true
     },
     "duck-walk": {
-      "frames": ["duck-4", "duck-5", "duck-6", "duck-7"],
+      "frames": [
+        "duck-4",
+        "duck-5",
+        "duck-6",
+        "duck-7"
+      ],
       "fps": 6,
       "loop": true
     },

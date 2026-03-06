@@ -11,10 +11,11 @@
  */
 
 import { WorldMap } from './WorldMap';
-import { TileType, Plot, PlacedModuleInfo } from '../core/types';
+import { TileType, Plot, PlacedModuleInfo, AutotilerConfig } from '../core/types';
 import { FileNode, MapLayout, MapTile } from '../../core/codebase-mapper';
 import { ModuleRegistry } from '../modules/ModuleRegistry';
 import { placeModules, PlacerContext } from '../modules/ModulePlacer';
+import { Autotiler } from '../core/Autotiler';
 
 interface LayoutNode {
   node: FileNode;
@@ -175,11 +176,18 @@ export class WorldGenerator {
   private fileExtensionToCrop: Map<string, string>;
   private moduleRegistry: ModuleRegistry | null;
   private placedModules: PlacedModuleInfo[] = [];
+  private autotiler: Autotiler;
 
-  constructor(map: WorldMap, config: Partial<GeneratorConfig> = {}, moduleRegistry?: ModuleRegistry) {
+  constructor(
+    map: WorldMap,
+    config: Partial<GeneratorConfig> = {},
+    moduleRegistry?: ModuleRegistry,
+    autotilerConfig?: AutotilerConfig
+  ) {
     this.map = map;
     this.config = { ...DEFAULT_CONFIG, ...config };
     this.moduleRegistry = moduleRegistry ?? null;
+    this.autotiler = new Autotiler(autotilerConfig ?? { version: 3, terrains: [], transitions: [] });
 
     // Map file extensions to crop types
     this.fileExtensionToCrop = new Map([
@@ -269,34 +277,58 @@ export class WorldGenerator {
     // 4. Update map dimensions to match world (tile units)
     this.map.setDimensions(bounds.maxX, bounds.maxY);
 
-    // 5. Fill ground AFTER plots are positioned (so grass covers everything)
+    // ── PHASE 1: TERRAIN FOUNDATION ──
+    // All terrain tiles placed with default sprites, then autotiled.
+
+    // 5. Fill ground with noise-based grass variants
     this.fillGround(bounds);
 
-    // 6. Place directory plots (fences + tilled dirt)
+    // 6. Place tilled dirt inside directory plot areas
     for (const rect of plotRects) {
-      this.createDirectoryPlotFromRect(rect);
+      this.fillTilledDirt(rect.x, rect.y, rect.width, rect.height);
     }
 
-    // 7. Place file crops INSIDE their parent directory plots
-    this.placeFileCropsInDirectories(fileTiles, dirLookup, bounds);
-
-    // 8. Place pre-designed tile modules (ponds, decorative vignettes, landmarks)
+    // 7. Place pre-designed tile modules (may contain terrain tiles like water)
     if (this.moduleRegistry && this.moduleRegistry.size > 0) {
       const placerCtx: PlacerContext = {
         map: this.map,
         worldWidth: bounds.maxX - bounds.minX,
         worldHeight: bounds.maxY - bounds.minY,
         plots: plotRects.map(r => ({ x: r.x, y: r.y, width: r.width, height: r.height })),
-        pathCount: plotRects.length, // Approximate: paths ~= plot count before MST
+        pathCount: plotRects.length,
       };
       this.placedModules = placeModules(this.moduleRegistry, placerCtx);
     }
 
-    // 9. Post-processing (all use world bounds)
+    // 8. Water features
     this.generateWater(bounds);
+
+    // 9. Path network (tiles placed with default sprites)
     this.generatePaths();
+
+    // 10. Unified autotile pass — resolves sprites for ALL terrain types
+    this.autoTileAllTerrain();
+
+    // ── PHASE 2: WORLD OBJECTS ──
+    // Props, structures, and decorations placed on top of terrain.
+
+    // 11. Fences around directory plots
+    for (const rect of plotRects) {
+      this.createFence(rect.x, rect.y, rect.width, rect.height);
+    }
+
+    // 12. Create plot records for directories
+    for (const rect of plotRects) {
+      this.createDirectoryPlotRecord(rect);
+    }
+
+    // 13. Gates where paths meet fences
     this.placeFenceGates();
-    this.autoTileGrassEdges();
+
+    // 14. File crops inside directory plots
+    this.placeFileCropsInDirectories(fileTiles, dirLookup, bounds);
+
+    // 15. Environmental decorations
     this.placeDecorations(bounds);
   }
 
@@ -336,30 +368,36 @@ export class WorldGenerator {
   // ─── Ground Generation ────────────────────────────────────────────────────
 
   /**
-   * Fill the ground layer with noise-based grass variation
-   * Uses actual world bounds so grass always covers all content.
+   * Fill the ground layer with noise-based grass variation.
+   * Reads defaultTile and variants from terrain config.
    */
   private fillGround(bounds: WorldBounds): void {
+    const grassConfig = this.autotiler.getTerrainConfig('grass');
+    const defaultTile = grassConfig?.defaultTile || 't_1_1';
+    const variants = grassConfig?.variants || [];
+    const sheet = grassConfig?.spritesheet || 'grass';
+
     for (let y = bounds.minY; y <= bounds.maxY; y++) {
       for (let x = bounds.minX; x <= bounds.maxX; x++) {
-        // Two-octave noise for organic grass variation
-        const n = fbmNoise(x * 0.15, y * 0.15, 2);
-
         let variant: number;
         let spriteId: string;
 
-        if (n < 0.5) {
-          variant = 0;
-          spriteId = 'grass/grass-center';
-        } else if (n < 0.7) {
-          variant = 1;
-          spriteId = 'grass/grass-var1';
-        } else if (n < 0.85) {
-          variant = 2;
-          spriteId = 'grass/grass-var2';
+        if (variants.length > 0) {
+          // Two-octave noise for organic grass variation
+          const n = fbmNoise(x * 0.15, y * 0.15, 2);
+
+          if (n < 0.5) {
+            variant = 0;
+            spriteId = `${sheet}/${defaultTile}`;
+          } else {
+            // Distribute noise across available variants
+            const vi = Math.min(variants.length - 1, Math.floor((n - 0.5) * 2 * variants.length));
+            variant = vi + 1;
+            spriteId = `${sheet}/${variants[vi]}`;
+          }
         } else {
-          variant = 3;
-          spriteId = 'grass/grass-var3';
+          variant = 0;
+          spriteId = `${sheet}/${defaultTile}`;
         }
 
         this.map.setTile(x, y, 'grass', spriteId, variant, LAYER_GROUND);
@@ -465,18 +503,10 @@ export class WorldGenerator {
   }
 
   /**
-   * Create a fenced plot from a pre-computed rectangle
+   * Create a plot record for a directory (no tile placement — that's done in terrain phase)
    */
-  private createDirectoryPlotFromRect(rect: PlotRect): void {
+  private createDirectoryPlotRecord(rect: PlotRect): void {
     const { x: startX, y: startY, width, height, tile } = rect;
-
-    // Create tilled dirt inside
-    this.fillTilledDirt(startX, startY, width, height);
-
-    // Create fence around
-    this.createFence(startX, startY, width, height);
-
-    // Create plot record
     const plot: Plot = {
       id: tile.node?.path || `${startX},${startY}`,
       x: startX,
@@ -650,29 +680,17 @@ export class WorldGenerator {
   // ─── Tile Placement Helpers ──────────────────────────────────────────────
 
   /**
-   * Fill area with tilled dirt
+   * Fill area with tilled dirt (default sprite — autotiler handles edges/corners)
    */
   private fillTilledDirt(startX: number, startY: number, width: number, height: number): void {
+    const tilledConfig = this.autotiler.getTerrainConfig('tilled');
+    const defaultTile = tilledConfig?.defaultTile || 't_1_1';
+    const sheet = tilledConfig?.spritesheet || 'tilled-dirt';
+    const spriteId = `${sheet}/${defaultTile}`;
+
     for (let y = 0; y < height; y++) {
       for (let x = 0; x < width; x++) {
-        const tx = startX + x;
-        const ty = startY + y;
-
-        // Determine sprite based on position
-        let spriteId = 'tilled-dirt/dirt-center';
-
-        if (y === 0) spriteId = 'tilled-dirt/dirt-edge-n';
-        else if (y === height - 1) spriteId = 'tilled-dirt/dirt-edge-s';
-        else if (x === 0) spriteId = 'tilled-dirt/dirt-edge-w';
-        else if (x === width - 1) spriteId = 'tilled-dirt/dirt-edge-e';
-
-        // Corners
-        if (x === 0 && y === 0) spriteId = 'tilled-dirt/dirt-corner-nw';
-        else if (x === width - 1 && y === 0) spriteId = 'tilled-dirt/dirt-corner-ne';
-        else if (x === 0 && y === height - 1) spriteId = 'tilled-dirt/dirt-corner-sw';
-        else if (x === width - 1 && y === height - 1) spriteId = 'tilled-dirt/dirt-corner-se';
-
-        this.map.setTile(tx, ty, 'tilled', spriteId, 0, LAYER_GROUND);
+        this.map.setTile(startX + x, startY + y, 'tilled', spriteId, 0, LAYER_GROUND);
       }
     }
   }
@@ -834,7 +852,10 @@ export class WorldGenerator {
           const groundTile = this.map.getTile(x, y, LAYER_GROUND);
           if (groundTile && groundTile.type === 'tilled') continue;
 
-          this.map.setTile(x, y, 'water', 'water/water-0', 0, LAYER_GROUND);
+          const waterConfig = this.autotiler.getTerrainConfig('water');
+          const waterTile = waterConfig?.defaultTile || 't_0_0';
+          const waterSheet = waterConfig?.spritesheet || 'water';
+          this.map.setTile(x, y, 'water', `${waterSheet}/${waterTile}`, 0, LAYER_GROUND);
         }
       }
     }
@@ -916,8 +937,7 @@ export class WorldGenerator {
       }
     }
 
-    // Auto-tile paths after all are placed
-    this.autoTilePaths();
+    // Path sprites are resolved by the unified autoTileAllTerrain() pass
   }
 
   /**
@@ -932,59 +952,12 @@ export class WorldGenerator {
     const terrainTile = this.map.getTile(x, y, LAYER_TERRAIN);
     if (terrainTile) return;
 
-    this.map.setTile(x, y, 'path', 'paths/path-center', 0, LAYER_GROUND);
+    const pathConfig = this.autotiler.getTerrainConfig('path');
+    const pathTile = pathConfig?.defaultTile || 't_0_0';
+    const pathSheet = pathConfig?.spritesheet || 'paths';
+    this.map.setTile(x, y, 'path', `${pathSheet}/${pathTile}`, 0, LAYER_GROUND);
   }
 
-  /**
-   * Auto-tile paths based on NSEW neighbor presence
-   */
-  private autoTilePaths(): void {
-    const allTiles = this.map.getAllTiles();
-    const pathPositions = new Set<string>();
-
-    // Build set of path positions
-    for (const tile of allTiles) {
-      if (tile.type === 'path' && tile.layer === LAYER_GROUND) {
-        pathPositions.add(`${tile.x},${tile.y}`);
-      }
-    }
-
-    // Update each path tile based on neighbors
-    for (const tile of allTiles) {
-      if (tile.type !== 'path' || tile.layer !== LAYER_GROUND) continue;
-
-      const { x, y } = tile;
-      const n = pathPositions.has(`${x},${y - 1}`);
-      const s = pathPositions.has(`${x},${y + 1}`);
-      const e = pathPositions.has(`${x + 1},${y}`);
-      const w = pathPositions.has(`${x - 1},${y}`);
-
-      // Select sprite based on connectivity
-      // Default to center for fully connected or isolated paths
-      let spriteId = 'paths/path-center';
-
-      // The path spritesheet may only have path-center available.
-      // We use it as fallback; if edge sprites exist they will render,
-      // otherwise path-center is fine everywhere.
-      if (n && s && !e && !w) spriteId = 'paths/path-vertical';
-      else if (!n && !s && e && w) spriteId = 'paths/path-horizontal';
-      else if (!n && s && e && !w) spriteId = 'paths/path-corner-nw';
-      else if (!n && s && !e && w) spriteId = 'paths/path-corner-ne';
-      else if (n && !s && e && !w) spriteId = 'paths/path-corner-sw';
-      else if (n && !s && !e && w) spriteId = 'paths/path-corner-se';
-      else if (n && s && e && !w) spriteId = 'paths/path-edge-w';
-      else if (n && s && !e && w) spriteId = 'paths/path-edge-e';
-      else if (!n && s && e && w) spriteId = 'paths/path-edge-n';
-      else if (n && !s && e && w) spriteId = 'paths/path-edge-s';
-      // Endpoints
-      else if (n && !s && !e && !w) spriteId = 'paths/path-end-s';
-      else if (!n && s && !e && !w) spriteId = 'paths/path-end-n';
-      else if (!n && !s && e && !w) spriteId = 'paths/path-end-w';
-      else if (!n && !s && !e && w) spriteId = 'paths/path-end-e';
-
-      this.map.setTile(x, y, 'path', spriteId, 0, LAYER_GROUND);
-    }
-  }
 
   /**
    * Replace fence tiles with gates where paths are adjacent
@@ -1019,48 +992,39 @@ export class WorldGenerator {
     }
   }
 
-  // ─── Auto-tiling ─────────────────────────────────────────────────────────
+  // ─── Unified Terrain Autotiling ──────────────────────────────────────────
+
+  /** Terrain types processed by the autotiler */
+  private static readonly TERRAIN_TYPES: ReadonlySet<TileType> = new Set([
+    'grass', 'tilled', 'water', 'path',
+  ]);
 
   /**
-   * Auto-tile grass edges where grass meets tilled dirt or fences.
+   * Unified autotile pass for all terrain types on the ground layer.
+   * Resolves sprites based on neighbor bitmask configuration.
+   * Tiles with "" bitmask entries (e.g., interior grass) keep their existing sprites.
    */
-  private autoTileGrassEdges(): void {
-    const allTiles = this.map.getAllTiles();
-    const nonGrass = new Set<string>();
+  private autoTileAllTerrain(): void {
+    const terrainTiles = this.map.getAllTiles()
+      .filter(t => t.layer === LAYER_GROUND && WorldGenerator.TERRAIN_TYPES.has(t.type));
 
-    // Build a set of tiles that are not grass (on the ground layer)
-    for (const tile of allTiles) {
-      if (tile.type !== 'grass') {
-        nonGrass.add(`${tile.x},${tile.y}`);
+    const getTileType = (x: number, y: number, layer?: number): TileType | null => {
+      const tile = this.map.getTile(x, y, layer ?? 0);
+      return tile?.type ?? null;
+    };
+
+    const setSprite = (x: number, y: number, spriteId: string): void => {
+      const tile = this.map.getTile(x, y, LAYER_GROUND);
+      if (tile) {
+        this.map.setTile(x, y, tile.type, spriteId, tile.variant, LAYER_GROUND);
       }
-    }
+    };
 
-    // For each grass tile, check if it borders a non-grass tile
-    for (const tile of allTiles) {
-      if (tile.type !== 'grass' || tile.layer !== LAYER_GROUND) continue;
-
-      const { x, y } = tile;
-      const n = nonGrass.has(`${x},${y - 1}`);
-      const s = nonGrass.has(`${x},${y + 1}`);
-      const e = nonGrass.has(`${x + 1},${y}`);
-      const w = nonGrass.has(`${x - 1},${y}`);
-
-      // Select edge sprite based on neighbors
-      let spriteId: string | null = null;
-
-      if (n && w) spriteId = 'grass/grass-corner-nw';
-      else if (n && e) spriteId = 'grass/grass-corner-ne';
-      else if (s && w) spriteId = 'grass/grass-corner-sw';
-      else if (s && e) spriteId = 'grass/grass-corner-se';
-      else if (n) spriteId = 'grass/grass-edge-n';
-      else if (s) spriteId = 'grass/grass-edge-s';
-      else if (e) spriteId = 'grass/grass-edge-e';
-      else if (w) spriteId = 'grass/grass-edge-w';
-
-      if (spriteId) {
-        this.map.setTile(x, y, 'grass', spriteId, 0, LAYER_GROUND);
-      }
-    }
+    this.autotiler.autotileTerrain(
+      terrainTiles.map(t => ({ x: t.x, y: t.y, type: t.type })),
+      getTileType,
+      setSprite
+    );
   }
 
   // ─── Clustered Decoration System ──────────────────────────────────────────

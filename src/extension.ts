@@ -16,18 +16,23 @@ import { getHookServer } from './core/hook-server';
 import { getAssetLoader } from './overworld/core/AssetLoader';
 import { SpriteConfigPanel, getSpriteConfigPanel } from './panels/SpriteConfigPanel';
 import { ModuleEditorPanel, getModuleEditorPanel } from './panels/ModuleEditorPanel';
+import { TerrainConfigPanel, getTerrainConfigPanel } from './panels/TerrainConfigPanel';
 import { onSettingsChanged, getSettings } from './core/settings';
 import { ActivityEntry, ToolUseEvent, SubagentStartEvent, SubagentStopEvent } from './core/event-types';
 import { FileAction } from './core/codebase-mapper';
 import { WorldMap } from './overworld/world/WorldMap';
 import { WorldGenerator } from './overworld/world/WorldGenerator';
 import { getModuleRegistry } from './overworld/modules/ModuleRegistry';
+import { getContextFarmEngine, ContextFarmEngine } from './context-farm';
+import { AutotilerConfig } from './overworld/core/types';
 
 let gameViewPanel: GameViewPanel | undefined;
 let budgetBarPanel: ReturnType<typeof getBudgetBarPanel> | undefined;
 let budgetStatusBar: BudgetStatusBar | undefined;
 let worldMap: WorldMap | undefined;
 let worldGenerator: WorldGenerator | undefined;
+let contextFarmEngine: ContextFarmEngine | undefined;
+let autotilerConfig: AutotilerConfig | undefined;
 
 export function activate(context: vscode.ExtensionContext): void {
   console.log('CodeMon is activating...');
@@ -43,16 +48,28 @@ export function activate(context: vscode.ExtensionContext): void {
   // Initialize asset loader for overworld sprites (must complete before map updates)
   const assetLoader = getAssetLoader(extensionUri);
   const moduleRegistry = getModuleRegistry(extensionUri);
+
+  // Load autotiler config alongside assets and modules
+  const loadAutotilerConfig = async (): Promise<void> => {
+    try {
+      const configPath = vscode.Uri.joinPath(extensionUri, 'assets', 'config', 'terrain-bitmask.json');
+      const content = await vscode.workspace.fs.readFile(configPath);
+      autotilerConfig = JSON.parse(Buffer.from(content).toString('utf-8'));
+      console.log('[CodeMon] Autotiler config loaded successfully');
+    } catch (e) {
+      console.warn('[CodeMon] Failed to load terrain-bitmask.json:', e);
+    }
+  };
+
   Promise.all([
     assetLoader.load(),
     moduleRegistry.load(),
+    loadAutotilerConfig(),
   ]).then(() => {
-    console.log('[CodeMon] Assets and modules loaded successfully');
-    // Now that assets are loaded, populate the map
+    console.log('[CodeMon] Assets, modules, and terrain config loaded successfully');
     populateMapFromWorkspace();
   }).catch((err) => {
     console.error('[CodeMon] Failed to load assets:', err);
-    // Still populate map even if assets fail (will use fallback colors)
     populateMapFromWorkspace();
   });
 
@@ -74,6 +91,15 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.window.registerWebviewViewProvider(
       ModuleEditorPanel.viewType,
       moduleEditorPanel
+    )
+  );
+
+  // Register terrain config panel
+  const terrainConfigPanel = getTerrainConfigPanel(extensionUri);
+  context.subscriptions.push(
+    vscode.window.registerWebviewViewProvider(
+      TerrainConfigPanel.viewType,
+      terrainConfigPanel
     )
   );
 
@@ -107,6 +133,18 @@ export function activate(context: vscode.ExtensionContext): void {
 
   // Wire up event router to panels
   setupEventRouting(context, eventRouter);
+
+  // Initialize context farm engine
+  contextFarmEngine = getContextFarmEngine({ maxTokens: 200000, exitThreshold: 80 });
+  contextFarmEngine.initialize(eventRouter);
+
+  // Route context farm state updates to game view
+  contextFarmEngine.on('stateUpdate', () => {
+    const state = contextFarmEngine?.getSerializedState();
+    if (state) {
+      gameViewPanel?.updateContextFarm(state);
+    }
+  });
 
   // Watch for config changes
   context.subscriptions.push(
@@ -215,6 +253,9 @@ function setupEventRouting(
     gameViewPanel?.resetSession();
     budgetTracker.resetSession();
 
+    // Reset context farm engine
+    contextFarmEngine?.reset();
+
     // Reset map activity (keep tree structure)
     codebaseMapper.clearActivity();
     sendMapUpdate();
@@ -278,7 +319,7 @@ function sendMapUpdate(): void {
   }
   if (!worldGenerator) {
     const moduleRegistry = getModuleRegistry();
-    worldGenerator = new WorldGenerator(worldMap, {}, moduleRegistry);
+    worldGenerator = new WorldGenerator(worldMap, {}, moduleRegistry, autotilerConfig);
   }
 
   worldGenerator.generateFromLayout(layout);

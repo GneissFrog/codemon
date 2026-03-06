@@ -63,6 +63,11 @@
           "type": "webview",
           "id": "codemon.moduleEditor",
           "name": "Module Editor"
+        },
+        {
+          "type": "webview",
+          "id": "codemon.terrainConfig",
+          "name": "Terrain Config"
         }
       ]
     },
