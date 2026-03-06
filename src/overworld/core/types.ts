@@ -12,13 +12,24 @@ export interface SpriteDef {
   grid?: { col: number; row: number };
 }
 
+/** Configuration for loading Aseprite-exported animations */
+export interface AsepriteConfig {
+  jsonFile: string;        // Path to exported JSON (relative to extension root)
+  tags?: string[];         // Optional: only load specific tags (all if omitted)
+}
+
 export interface SpritesheetDef {
   image: string;
   dimensions: { width: number; height: number };
   frameSize: { width: number; height: number };
   grid: { cols: number; rows: number };
   sprites: Record<string, SpriteDef | { comment: string }>;
-  normalMap?: string;  // Optional: path to normal map image (auto-detected via _n suffix)
+  normalMap?: string;      // Optional: path to normal map image (auto-detected via _n suffix)
+  aseprite?: AsepriteConfig;  // Optional: Aseprite JSON export for auto-animation
+  isCharacter?: boolean;   // Optional: mark as character spritesheet
+  characterConfig?: CharacterConfig | LegacyCharacterConfig;  // Character animation config
+  /** Mark as terrain tileset — sprites auto-generated from grid as t_col_row */
+  terrainTileset?: boolean;
 }
 
 export interface AnimationDef {
@@ -67,12 +78,45 @@ export interface LoadedSprite {
   height: number;
 }
 
+/** Aseprite JSON export structure (simplified for what we need) */
+export interface AsepriteFrameData {
+  frame: { x: number; y: number; w: number; h: number };
+  rotated: boolean;
+  trimmed: boolean;
+  spriteSourceSize: { x: number; y: number; w: number; h: number };
+  sourceSize: { w: number; h: number };
+  duration: number;  // ms per frame
+}
+
+export interface AsepriteTagData {
+  name: string;
+  from: number;
+  to: number;
+  direction: 'forward' | 'reverse' | 'pingpong';
+}
+
+export interface AsepriteExportData {
+  frames: Record<string, AsepriteFrameData>;
+  meta: {
+    app: string;
+    version: string;
+    image: string;
+    format: string;
+    size: { w: number; h: number };
+    scale: number;
+    frameTags: AsepriteTagData[];
+    slices?: unknown[];
+  };
+}
+
 export interface LoadedSpritesheet {
   name: string;
   image: unknown | null;  // ImageBitmap in webview, null in extension host
   imageUrl: string;  // Data URL for webview transfer
   normalMapUrl?: string;  // Data URL for normal map (if exists)
   sprites: Map<string, LoadedSprite>;
+  asepriteData?: AsepriteExportData;  // Parsed Aseprite JSON (if available)
+  asepriteTags?: string[];  // Tags to filter (if using Aseprite)
 }
 
 export interface AnimationState {
@@ -96,15 +140,13 @@ export interface Tile {
   layer: number;  // 0=ground, 1=terrain, 2=crops/objects
 }
 
-export type TileType =
-  | 'grass'
-  | 'dirt'
-  | 'tilled'
-  | 'water'
-  | 'path'
-  | 'fence'
-  | 'fence-gate'
-  | 'decoration';
+/**
+ * Tile type identifier. Config-driven — new terrain types can be added
+ * via the TerrainConfigPanel without code changes.
+ *
+ * Common values: 'grass', 'tilled', 'water', 'path', 'fence', 'fence-gate', 'decoration'
+ */
+export type TileType = string;
 
 export interface Plot {
   id: string;
@@ -290,6 +332,57 @@ export const RENDER_LAYERS: RenderLayer[] = [
   { name: 'effects', zIndex: 5, visible: true },
   { name: 'ui', zIndex: 6, visible: true },
 ];
+
+// ─── Bitmask Autotile Types ────────────────────────────────────────────────
+
+/** Bitwise flags for 8-direction bitmask autotiling */
+export const enum DirectionBit {
+  NORTH     = 1,    // 00000001
+  NORTHEAST = 2,    // 00000010
+  EAST      = 4,    // 00000100
+  SOUTHEAST = 8,    // 00001000
+  SOUTH     = 16,   // 00010000
+  SOUTHWEST = 32,   // 00100000
+  WEST      = 64,   // 01000000
+  NORTHWEST = 128,  // 10000000
+}
+
+/** Configuration for a single terrain type's autotiling behavior */
+export interface TerrainConfig {
+  /** The terrain type this config applies to */
+  type: TileType;
+  /** Spritesheet name (e.g., 'grass', 'tilled-dirt') */
+  spritesheet: string;
+  /** Layer to render this terrain on (0=ground, 1=terrain, 2=objects) */
+  layer: number;
+  /** Default sprite name when no mapping found */
+  defaultSprite: string;
+  /** Maps 8-bit bitmask value (0-255) to sprite name suffix */
+  bitmaskMappings: string[];
+  /** Default tile grid name for initial placement (e.g., 't_1_1') */
+  defaultTile?: string;
+  /** Grid names of variant tiles for noise-based interior variation */
+  variants?: string[];
+}
+
+/** Defines a transition between two terrain types */
+export interface TerrainTransition {
+  /** Source terrain type */
+  fromTerrain: TileType;
+  /** Target terrain type */
+  toTerrain: TileType;
+  /** Which spritesheet to use for edge sprites */
+  edgeSpritesheet: string;
+  /** Higher priority = rendered on top */
+  priority: number;
+}
+
+/** Full autotiler configuration */
+export interface AutotilerConfig {
+  version: number;
+  terrains: TerrainConfig[];
+  transitions: TerrainTransition[];
+}
 
 // ─── Config Types ──────────────────────────────────────────────────────────
 

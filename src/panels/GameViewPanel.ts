@@ -12,6 +12,7 @@ import { AgentConfig, ActivityEntry } from '../core/event-types';
 import { BudgetStatus } from '../core/budget-tracker';
 import { getAssetLoader, WebviewAssetData } from '../overworld/core/AssetLoader';
 import { SerializedWorldMap } from '../overworld/core/types';
+import { SerializedContextFarmState } from '../context-farm/types';
 
 interface AgentPosition {
   x: number;
@@ -357,6 +358,19 @@ export class GameViewPanel {
       });
     } catch (error) {
       console.error('[GameView] Failed to refresh assets:', error);
+    }
+  }
+
+  /**
+   * Update context farm visualization
+   * Sends the current context window state to the webview
+   */
+  public updateContextFarm(state: SerializedContextFarmState): void {
+    if (this._panel) {
+      this._panel.webview.postMessage({
+        type: 'updateContextFarm',
+        state,
+      });
     }
   }
 

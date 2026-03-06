@@ -34,15 +34,15 @@
               "y": 0,
               "connections": {
                 "north": false,
-                "east": false,
-                "south": false,
-                "west": false,
+                "east": true,
+                "south": true,
+                "west": true,
                 "northeast": false,
-                "southeast": false,
-                "southwest": false,
+                "southeast": true,
+                "southwest": true,
                 "northwest": false
               },
-              "spriteName": ""
+              "spriteName": "grass-edge-n"
             },
             {
               "x": 32,
@@ -568,46 +568,46 @@
               "x": 80,
               "y": 64,
               "connections": {
-                "north": false,
+                "north": true,
                 "northeast": false,
-                "east": false,
+                "east": true,
                 "southeast": false,
-                "south": false,
-                "southwest": false,
-                "west": false,
-                "northwest": false
+                "south": true,
+                "southwest": true,
+                "west": true,
+                "northwest": true
               },
-              "spriteName": ""
+              "spriteName": "t_5_4"
             },
             {
               "x": 96,
               "y": 64,
               "connections": {
-                "north": false,
-                "northeast": false,
-                "east": false,
-                "southeast": false,
-                "south": false,
+                "north": true,
+                "northeast": true,
+                "east": true,
+                "southeast": true,
+                "south": true,
                 "southwest": false,
-                "west": false,
+                "west": true,
                 "northwest": false
               },
-              "spriteName": ""
+              "spriteName": "t_6_4"
             },
             {
               "x": 112,
               "y": 64,
               "connections": {
-                "north": false,
+                "north": true,
                 "northeast": false,
                 "east": false,
                 "southeast": false,
-                "south": false,
+                "south": true,
                 "southwest": false,
-                "west": false,
+                "west": true,
                 "northwest": false
               },
-              "spriteName": ""
+              "spriteName": "t_7_4"
             }
           ]
         },
@@ -624,181 +624,181 @@
               "x": 0,
               "y": 80,
               "connections": {
-                "north": false,
-                "northeast": false,
-                "east": false,
-                "southeast": false,
-                "south": false,
-                "southwest": false,
-                "west": false,
-                "northwest": false
+                "north": true,
+                "northeast": true,
+                "east": true,
+                "southeast": true,
+                "south": true,
+                "southwest": true,
+                "west": true,
+                "northwest": true
               },
-              "spriteName": ""
+              "spriteName": "t_0_5"
             },
             {
               "x": 16,
               "y": 80,
               "connections": {
-                "north": false,
-                "northeast": false,
-                "east": false,
-                "southeast": false,
-                "south": false,
-                "southwest": false,
-                "west": false,
-                "northwest": false
+                "north": true,
+                "northeast": true,
+                "east": true,
+                "southeast": true,
+                "south": true,
+                "southwest": true,
+                "west": true,
+                "northwest": true
               },
-              "spriteName": ""
+              "spriteName": "t_1_5"
             },
             {
               "x": 32,
               "y": 80,
               "connections": {
-                "north": false,
-                "northeast": false,
-                "east": false,
-                "southeast": false,
-                "south": false,
-                "southwest": false,
-                "west": false,
-                "northwest": false
+                "north": true,
+                "northeast": true,
+                "east": true,
+                "southeast": true,
+                "south": true,
+                "southwest": true,
+                "west": true,
+                "northwest": true
               },
-              "spriteName": ""
+              "spriteName": "t_2_5"
             },
             {
               "x": 48,
               "y": 80,
               "connections": {
-                "north": false,
-                "northeast": false,
-                "east": false,
-                "southeast": false,
-                "south": false,
-                "southwest": false,
-                "west": false,
-                "northwest": false
+                "north": true,
+                "northeast": true,
+                "east": true,
+                "southeast": true,
+                "south": true,
+                "southwest": true,
+                "west": true,
+                "northwest": true
               },
-              "spriteName": ""
+              "spriteName": "t_3_5"
             },
             {
               "x": 64,
               "y": 80,
               "connections": {
-                "north": false,
-                "northeast": false,
-                "east": false,
-                "southeast": false,
-                "south": false,
-                "southwest": false,
-                "west": false,
-                "northwest": false
+                "north": true,
+                "northeast": true,
+                "east": true,
+                "southeast": true,
+                "south": true,
+                "southwest": true,
+                "west": true,
+                "northwest": true
               },
-              "spriteName": ""
+              "spriteName": "t_4_5"
             },
             {
               "x": 80,
               "y": 80,
               "connections": {
-                "north": false,
-                "northeast": false,
-                "east": false,
-                "southeast": false,
-                "south": false,
-                "southwest": false,
-                "west": false,
-                "northwest": false
+                "north": true,
+                "northeast": true,
+                "east": true,
+                "southeast": true,
+                "south": true,
+                "southwest": true,
+                "west": true,
+                "northwest": true
               },
-              "spriteName": ""
+              "spriteName": "t_5_5"
             },
             {
               "x": 0,
               "y": 96,
               "connections": {
-                "north": false,
-                "northeast": false,
-                "east": false,
-                "southeast": false,
-                "south": false,
-                "southwest": false,
-                "west": false,
-                "northwest": false
+                "north": true,
+                "northeast": true,
+                "east": true,
+                "southeast": true,
+                "south": true,
+                "southwest": true,
+                "west": true,
+                "northwest": true
               },
-              "spriteName": ""
+              "spriteName": "t_0_6"
             },
             {
               "x": 16,
               "y": 96,
               "connections": {
-                "north": false,
-                "northeast": false,
-                "east": false,
-                "southeast": false,
-                "south": false,
-                "southwest": false,
-                "west": false,
-                "northwest": false
+                "north": true,
+                "northeast": true,
+                "east": true,
+                "southeast": true,
+                "south": true,
+                "southwest": true,
+                "west": true,
+                "northwest": true
               },
-              "spriteName": ""
+              "spriteName": "t_1_6"
             },
             {
               "x": 32,
               "y": 96,
               "connections": {
-                "north": false,
-                "northeast": false,
-                "east": false,
-                "southeast": false,
-                "south": false,
-                "southwest": false,
-                "west": false,
-                "northwest": false
+                "north": true,
+                "northeast": true,
+                "east": true,
+                "southeast": true,
+                "south": true,
+                "southwest": true,
+                "west": true,
+                "northwest": true
               },
-              "spriteName": ""
+              "spriteName": "t_2_6"
             },
             {
               "x": 48,
               "y": 96,
               "connections": {
-                "north": false,
-                "northeast": false,
-                "east": false,
-                "southeast": false,
-                "south": false,
-                "southwest": false,
-                "west": false,
-                "northwest": false
+                "north": true,
+                "northeast": true,
+                "east": true,
+                "southeast": true,
+                "south": true,
+                "southwest": true,
+                "west": true,
+                "northwest": true
               },
-              "spriteName": ""
+              "spriteName": "t_3_6"
             },
             {
               "x": 64,
               "y": 96,
               "connections": {
-                "north": false,
-                "northeast": false,
-                "east": false,
-                "southeast": false,
-                "south": false,
-                "southwest": false,
-                "west": false,
-                "northwest": false
+                "north": true,
+                "northeast": true,
+                "east": true,
+                "southeast": true,
+                "south": true,
+                "southwest": true,
+                "west": true,
+                "northwest": true
               },
-              "spriteName": ""
+              "spriteName": "t_4_6"
             },
             {
               "x": 80,
               "y": 96,
               "connections": {
-                "north": false,
-                "northeast": false,
-                "east": false,
-                "southeast": false,
-                "south": false,
-                "southwest": false,
-                "west": false,
-                "northwest": false
+                "north": true,
+                "northeast": true,
+                "east": true,
+                "southeast": true,
+                "south": true,
+                "southwest": true,
+                "west": true,
+                "northwest": true
               },
-              "spriteName": ""
+              "spriteName": "t_5_6"
             }
           ]
         },
@@ -1035,6 +1035,77 @@
                 "northwest": false
               },
               "spriteName": "tile_10_4"
+            }
+          ]
+        },
+        {
+          "id": "zone-1772775515920",
+          "name": "Zone 9",
+          "x": 0,
+          "y": 64,
+          "cols": 4,
+          "rows": 1,
+          "cellSize": 16,
+          "cells": [
+            {
+              "x": 0,
+              "y": 64,
+              "connections": {
+                "north": true,
+                "northeast": false,
+                "east": false,
+                "southeast": false,
+                "south": true,
+                "southwest": false,
+                "west": false,
+                "northwest": false
+              },
+              "spriteName": "t_0_4"
+            },
+            {
+              "x": 16,
+              "y": 64,
+              "connections": {
+                "north": false,
+                "northeast": false,
+                "east": true,
+                "southeast": false,
+                "south": false,
+                "southwest": false,
+                "west": true,
+                "northwest": false
+              },
+              "spriteName": "t_1_4"
+            },
+            {
+              "x": 32,
+              "y": 64,
+              "connections": {
+                "north": false,
+                "northeast": false,
+                "east": false,
+                "southeast": false,
+                "south": false,
+                "southwest": false,
+                "west": false,
+                "northwest": false
+              },
+              "spriteName": "t_2_4"
+            },
+            {
+              "x": 48,
+              "y": 64,
+              "connections": {
+                "north": false,
+                "northeast": false,
+                "east": false,
+                "southeast": false,
+                "south": false,
+                "southwest": false,
+                "west": false,
+                "northwest": false
+              },
+              "spriteName": "t_3_4"
             }
           ]
         }
