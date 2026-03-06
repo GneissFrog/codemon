@@ -675,6 +675,14 @@ export class TerrainConfigPanel implements vscode.WebviewViewProvider {
       animation: pulse 1.5s infinite;
     }
 
+    #btn-toggle-overlay {
+      min-width: 60px;
+    }
+
+    #btn-toggle-overlay:active, #btn-toggle-overlay:focus {
+      outline: 2px solid var(--pixel-accent);
+    }
+
     @keyframes pulse {
       0%, 100% { opacity: 1; }
       50% { opacity: 0.5; }
@@ -694,6 +702,7 @@ export class TerrainConfigPanel implements vscode.WebviewViewProvider {
   <div class="toolbar">
     <select id="sheet-select"></select>
     <button id="btn-add-zone" title="Add grid zone">+ Zone</button>
+    <button id="btn-toggle-overlay" title="Toggle zone overlays">👁 Zones</button>
     <span style="flex:1"></span>
     <button id="btn-zoom-out" title="Zoom out">−</button>
     <span id="zoom-level" style="min-width:36px;text-align:center">2x</span>
@@ -822,6 +831,7 @@ export class TerrainConfigPanel implements vscode.WebviewViewProvider {
     let overlayCanvas, overlayCtx;
     let currentSheetImage = null;
     let zoomLevel = 2; // Default 2x zoom
+    let showOverlays = true; // Toggle for zone overlay visibility
     const ZOOM_LEVELS = [1, 2, 3, 4, 6, 8];
 
     // Direction bits
@@ -1034,10 +1044,20 @@ export class TerrainConfigPanel implements vscode.WebviewViewProvider {
       applyZoom();
     });
 
+    document.getElementById('btn-toggle-overlay').addEventListener('click', () => {
+      showOverlays = !showOverlays;
+      const btn = document.getElementById('btn-toggle-overlay');
+      btn.style.opacity = showOverlays ? '1' : '0.5';
+      renderOverlay();
+    });
+
     function renderOverlay() {
       if (!overlayCtx || !currentMapping) return;
 
       overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+
+      // Skip drawing overlays if hidden
+      if (!showOverlays) return;
 
       // Draw zones
       currentMapping.zones.forEach((zone, zi) => {
@@ -1265,7 +1285,7 @@ export class TerrainConfigPanel implements vscode.WebviewViewProvider {
               north: false, northeast: false, east: false, southeast: false,
               south: false, southwest: false, west: false, northwest: false
             },
-            spriteName: ''
+            spriteName: 't_' + col + '_' + row
           });
         }
       }
@@ -1304,7 +1324,7 @@ export class TerrainConfigPanel implements vscode.WebviewViewProvider {
               north: false, northeast: false, east: false, southeast: false,
               south: false, southwest: false, west: false, northwest: false
             },
-            spriteName: ''
+            spriteName: 't_' + col + '_' + row
           });
         }
       }
@@ -1369,7 +1389,7 @@ export class TerrainConfigPanel implements vscode.WebviewViewProvider {
             north: false, northeast: false, east: false, southeast: false,
             south: false, southwest: false, west: false, northwest: false
           },
-          spriteName: ''
+          spriteName: 't_' + col + '_' + row
         });
       }
 
@@ -1555,14 +1575,8 @@ export class TerrainConfigPanel implements vscode.WebviewViewProvider {
     });
 
     function findSpriteAtPosition(sheet, x, y, cellSize) {
-      for (const [name, sprite] of Object.entries(sheet.sprites)) {
-        if (typeof sprite !== 'object' || sprite.comment !== undefined) continue;
-        if (sprite.x === x && sprite.y === y) {
-          return name;
-        }
-      }
-      // Fallback
-      return 'tile_' + Math.floor(x / cellSize) + '_' + Math.floor(y / cellSize);
+      // Grid-position naming for terrain tilesets
+      return 't_' + Math.floor(x / cellSize) + '_' + Math.floor(y / cellSize);
     }
 
     // === Canvas Click Handler ===
