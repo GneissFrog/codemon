@@ -47,6 +47,23 @@ export function calculateBitmask(neighbors: NeighborLookup): number {
   if (neighbors.hasSouthwest) mask |= DirectionBit.SOUTHWEST;
   if (neighbors.hasWest) mask |= DirectionBit.WEST;
   if (neighbors.hasNorthwest) mask |= DirectionBit.NORTHWEST;
+  return maskIrrelevantDiagonals(mask);
+}
+
+/**
+ * Mask out diagonal bits where one or both adjacent cardinals are absent.
+ * A diagonal is only visually relevant when both flanking cardinals are present —
+ * otherwise the edge/corner sprite already covers that visual and the diagonal
+ * neighbor doesn't change the tile's appearance.
+ *
+ * This ensures that the same visual pattern always produces the same bitmask,
+ * regardless of what happens to sit at an irrelevant diagonal position.
+ */
+export function maskIrrelevantDiagonals(mask: number): number {
+  if (!(mask & DirectionBit.NORTH) || !(mask & DirectionBit.EAST))  mask &= ~DirectionBit.NORTHEAST;
+  if (!(mask & DirectionBit.EAST)  || !(mask & DirectionBit.SOUTH)) mask &= ~DirectionBit.SOUTHEAST;
+  if (!(mask & DirectionBit.SOUTH) || !(mask & DirectionBit.WEST))  mask &= ~DirectionBit.SOUTHWEST;
+  if (!(mask & DirectionBit.WEST)  || !(mask & DirectionBit.NORTH)) mask &= ~DirectionBit.NORTHWEST;
   return mask;
 }
 

@@ -236,11 +236,27 @@ export class TerrainConfigPanel implements vscode.WebviewViewProvider {
       // Auto-generate bitmask config so test canvas sees changes immediately
       await this._generateBitmaskConfig(data.terrainType);
 
+      // Send updated config back to webview so test canvas refreshes
       this._view?.webview.postMessage({ type: 'saveSuccess' });
+      this._view?.webview.postMessage({ type: 'loadConfig', config: this._config });
     } catch (e) {
       console.error('[TerrainConfigPanel] Failed to save mappings:', e);
       this._view?.webview.postMessage({ type: 'saveError', error: String(e) });
     }
+  }
+
+  /**
+   * Mask out diagonal bits where one or both adjacent cardinals are absent.
+   * A diagonal is only visually relevant when both flanking cardinals are present
+   * (otherwise the edge/corner already covers that visual).
+   */
+  private _maskIrrelevantDiagonals(mask: number): number {
+    const N = 1, NE = 2, E = 4, SE = 8, S = 16, SW = 32, W = 64, NW = 128;
+    if (!(mask & N) || !(mask & E)) mask &= ~NE;
+    if (!(mask & E) || !(mask & S)) mask &= ~SE;
+    if (!(mask & S) || !(mask & W)) mask &= ~SW;
+    if (!(mask & W) || !(mask & N)) mask &= ~NW;
+    return mask;
   }
 
   private async _generateBitmaskConfig(terrainType: string): Promise<void> {
@@ -272,6 +288,8 @@ export class TerrainConfigPanel implements vscode.WebviewViewProvider {
         if (cell.connections.west) bitmask |= DIR.W;
         if (cell.connections.northwest) bitmask |= DIR.NW;
 
+        // Mask irrelevant diagonals so the canonical bitmask matches lookups
+        bitmask = this._maskIrrelevantDiagonals(bitmask);
         newMappings[bitmask] = cell.spriteName;
       }
     }
@@ -1721,8 +1739,8 @@ export class TerrainConfigPanel implements vscode.WebviewViewProvider {
           type: type,
           spritesheet: 'grass',
           layer: 0,
-          defaultSprite: type + '-center',
-          bitmaskMappings: Array(256).fill(type + '-center')
+          defaultSprite: 't_1_1',
+          bitmaskMappings: Array(256).fill('t_1_1')
         });
         vscode.postMessage({ type: 'saveConfig', data: config });
       }
@@ -1766,6 +1784,21 @@ export class TerrainConfigPanel implements vscode.WebviewViewProvider {
       paintTerrain = config.terrains[0]?.type || 'grass';
     }
 
+    /**
+     * Mask out diagonal bits that are irrelevant because one or both
+     * adjacent cardinal neighbors are absent. This ensures that the same
+     * visual pattern (edge, corner) always produces the same bitmask
+     * regardless of what happens to sit at an irrelevant diagonal.
+     */
+    function maskIrrelevantDiagonals(mask) {
+      const N = 1, NE = 2, E = 4, SE = 8, S = 16, SW = 32, W = 64, NW = 128;
+      if (!(mask & N) || !(mask & E)) mask &= ~NE;  // NE needs N and E
+      if (!(mask & E) || !(mask & S)) mask &= ~SE;  // SE needs E and S
+      if (!(mask & S) || !(mask & W)) mask &= ~SW;  // SW needs S and W
+      if (!(mask & W) || !(mask & N)) mask &= ~NW;  // NW needs W and N
+      return mask;
+    }
+
     function calculateBitmask(x, y, terrainType) {
       const dirs = [
         { dx: 0, dy: -1, bit: 1 },    // N
@@ -1789,7 +1822,7 @@ export class TerrainConfigPanel implements vscode.WebviewViewProvider {
           }
         }
       }
-      return mask;
+      return maskIrrelevantDiagonals(mask);
     }
 
     function getSpriteForTestTile(x, y) {
@@ -1875,12 +1908,23 @@ export class TerrainConfigPanel implements vscode.WebviewViewProvider {
           const sheet = assets.spritesheets[spriteInfo.sheet];
           if (!sheet) continue;
 
-          const sprite = sheet.sprites[spriteInfo.sprite];
+          let sprite = sheet.sprites[spriteInfo.sprite];
+          // Fallback: parse t_col_row name to compute sprite position directly
+          if (!sprite && spriteInfo.sprite.startsWith('t_')) {
+            const parts = spriteInfo.sprite.split('_');
+            if (parts.length === 3) {
+              const sc = parseInt(parts[1]);
+              const sr = parseInt(parts[2]);
+              if (!isNaN(sc) && !isNaN(sr)) {
+                sprite = { x: sc * TILE_SIZE, y: sr * TILE_SIZE, w: TILE_SIZE, h: TILE_SIZE };
+              }
+            }
+          }
           if (!sprite) continue;
 
           testCtx.drawImage(
             img,
-            sprite.x, sprite.y, sprite.w || 16, sprite.h || 16,
+            sprite.x, sprite.y, sprite.w || TILE_SIZE, sprite.h || TILE_SIZE,
             x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE
           );
         }
