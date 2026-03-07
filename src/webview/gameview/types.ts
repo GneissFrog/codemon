@@ -65,6 +65,18 @@ export interface SubagentState {
   direction: Direction;
   pauseUntil: number;
   path: { x: number; y: number }[];
+  /** Original agent type string, e.g. "bug-analyzer" */
+  agentType?: string;
+  /** Display name for label rendering */
+  displayName?: string;
+  /** Hex tint color, e.g. "#ff4444" */
+  tint?: string | null;
+  /** State machine config id for behavior */
+  stateMachineId?: string;
+  /** Animation set id (defaults to type) */
+  animationSet?: string;
+  /** Current animation name from state machine */
+  currentAnimation?: string;
 }
 
 // ─── Animal Behavior Types ────────────────────────────────────────────────
@@ -245,6 +257,7 @@ export interface CharacterConfig {
 export interface WebviewAssetData {
   spriteMappings: Record<string, string>;
   spritesheets: Record<string, SpritesheetData>;
+  animationSets?: Record<string, import('../../overworld/core/types').AnimationSetDef>;
 }
 
 // ─── Game State ────────────────────────────────────────────────────────────

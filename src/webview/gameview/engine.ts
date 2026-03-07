@@ -25,6 +25,10 @@ import {
   WeatherType,
 } from './types';
 import { SpatialHash } from './SpatialHash';
+import { StateMachine } from '../../state-machine/StateMachine';
+import type { StateMachineConfig, AgentTypeConfig } from '../../state-machine/types';
+import { AnimationResolver } from '../../animation/AnimationResolver';
+import type { AnimationSetDef } from '../../overworld/core/types';
 
 // ─── Constants ────────────────────────────────────────────────────────────
 
@@ -78,7 +82,7 @@ export class GameEngine {
   // Spatial hash for O(1) plot lookups
   plotSpatialHash = new SpatialHash<Plot>(10);
 
-  // Wander AI
+  // Wander AI (legacy — used as fallback when no state machine config loaded)
   wander: WanderState = {
     enabled: true,
     idleTimeout: 5000,
@@ -91,8 +95,18 @@ export class GameEngine {
     isWandering: false,
   };
 
+  // Config-driven state machines
+  private smConfigs: Record<string, StateMachineConfig> = {};
+  private agentTypeConfigs: Record<string, AgentTypeConfig> = {};
+  private wanderSM: StateMachine | null = null;
+  private subagentSMs = new Map<string, StateMachine>();
+  private lastUpdateTime = 0;
+
   // Manifest data for animations
   manifest: { animations?: Record<string, { frames: string[]; fps: number; loop: boolean }> } | null = null;
+
+  // Animation resolver for animation set lookups
+  private animResolver: AnimationResolver | null = null;
 
   // Weather system
   weather: WeatherState = {
@@ -134,6 +148,42 @@ export class GameEngine {
       sessionCost: 0,
       activities: [],
     };
+  }
+
+  // ─── State Machine Config ──────────────────────────────────────────────
+
+  loadStateMachineConfigs(
+    machines: Record<string, StateMachineConfig>,
+    agentTypes: Record<string, AgentTypeConfig>
+  ): void {
+    this.smConfigs = machines;
+    this.agentTypeConfigs = agentTypes;
+
+    // Create wander state machine from main-agent config
+    const mainAgentConfig = machines['main-agent'];
+    if (mainAgentConfig) {
+      this.wanderSM = new StateMachine(mainAgentConfig);
+      console.log('[Engine] Wander state machine loaded:', mainAgentConfig.id);
+    }
+
+    // Create state machines for existing subagents
+    for (const sa of this.state.subagents) {
+      this.ensureSubagentSM(sa);
+    }
+  }
+
+  private ensureSubagentSM(sa: SubagentState): StateMachine | null {
+    if (this.subagentSMs.has(sa.id)) {
+      return this.subagentSMs.get(sa.id)!;
+    }
+    const smId = sa.stateMachineId || sa.type;
+    const config = this.smConfigs[smId];
+    if (config) {
+      const sm = new StateMachine(config);
+      this.subagentSMs.set(sa.id, sm);
+      return sm;
+    }
+    return null;
   }
 
   // ─── Walkability Map ─────────────────────────────────────────────────────
@@ -306,6 +356,11 @@ export class GameEngine {
     this.wander.isPaused = false;
     this.wander.lastActivityTime = performance.now();
 
+    // Transition wander SM to walking state
+    if (this.wanderSM) {
+      this.wanderSM.send('move_to_file');
+    }
+
     // Find target plot
     let targetPlot = this.state.plots.find(p => !p.isDirectory && p.filePath === filePath);
     if (!targetPlot) {
@@ -393,6 +448,13 @@ export class GameEngine {
 
     if (!this.wander.enabled || this.state.tiles.length === 0) return;
 
+    // Use state machine if loaded
+    if (this.wanderSM) {
+      this.updateWanderSM(now);
+      return;
+    }
+
+    // Legacy fallback: boolean flag wander
     if (agent.isMoving && !this.wander.isWandering) {
       this.wander.lastActivityTime = now;
       return;
@@ -426,67 +488,127 @@ export class GameEngine {
     }
   }
 
+  /**
+   * State-machine-driven wander behavior
+   */
+  private updateWanderSM(now: number): void {
+    const sm = this.wanderSM!;
+    const agent = this.state.agent;
+    const deltaMs = this.lastUpdateTime > 0 ? now - this.lastUpdateTime : 16;
+
+    // If agent is doing directed movement (not wander), keep SM in a non-wander state
+    if (agent.isMoving && sm.getCurrentStateId() === 'walking') {
+      return;
+    }
+
+    // If agent was externally moved (tool event set state to investigating/writing/etc),
+    // skip wander — the extension host SM handles those states
+    const state = sm.getCurrentStateId();
+    if (['investigating', 'writing', 'bashing', 'thinking', 'waiting', 'error', 'success'].includes(state)) {
+      return;
+    }
+
+    // Send movement_complete event when agent stops moving
+    if (!agent.isMoving && (state === 'wander-walking' || state === 'walking')) {
+      sm.send('movement_complete');
+    }
+
+    // Advance timers for auto-transitions (idle→wander-walking, wander-paused→wander-walking)
+    sm.update(deltaMs);
+
+    const currentState = sm.getCurrentStateId();
+
+    // Handle wander-walking: start a path if not already moving
+    if (currentState === 'wander-walking' && !agent.isMoving) {
+      for (let attempt = 0; attempt < 3; attempt++) {
+        if (this.startWanderPath(this.pickWanderTarget())) break;
+      }
+      if (!agent.isMoving) {
+        // Couldn't find a path, go back to paused
+        sm.send('movement_complete');
+      }
+    }
+
+    // Set animation from current state
+    const animation = sm.getAnimation();
+    if (animation) {
+      agent.animation = animation as any;
+    }
+  }
+
   // ─── Subagent AI ──────────────────────────────────────────────────────────
 
   updateSubagents(now: number, animFrame: number): void {
+    const deltaMs = this.lastUpdateTime > 0 ? now - this.lastUpdateTime : 16;
+
     for (const sa of this.state.subagents) {
       if (!sa.path) sa.path = [];
 
-      // Get behavior config for this animal type
-      const behavior = ANIMAL_BEHAVIORS[sa.type] || ANIMAL_BEHAVIORS.chicken;
-
       if (animFrame % 20 === 0) {
-        sa.frameIndex = (sa.frameIndex + 1) % 4;
+        // Use animation resolver for frame count if available
+        const animSetId = sa.animationSet || sa.type;
+        const animName = sa.currentAnimation || (sa.isMoving ? 'walk' : 'idle');
+        if (this.animResolver && this.animResolver.hasSet(animSetId)) {
+          const frames = this.animResolver.getFrames(animSetId, animName);
+          sa.frameIndex = (sa.frameIndex + 1) % (frames.length || 4);
+        } else {
+          sa.frameIndex = (sa.frameIndex + 1) % 4;
+        }
       }
 
-      if (sa.isMoving) {
-        const dx = sa.targetX - sa.x;
-        const dy = sa.targetY - sa.y;
-        const dist = Math.sqrt(dx * dx + dy * dy);
+      // Try state-machine-driven behavior first
+      const sm = this.ensureSubagentSM(sa);
+      if (sm) {
+        this.updateSubagentSM(sa, sm, now, deltaMs);
+        continue;
+      }
 
-        if (dist < 1) {
-          sa.x = sa.targetX;
-          sa.y = sa.targetY;
+      // Legacy fallback: use ANIMAL_BEHAVIORS constant
+      const behavior = ANIMAL_BEHAVIORS[sa.type] || ANIMAL_BEHAVIORS.chicken;
+      this.updateSubagentLegacy(sa, behavior, now);
+    }
+  }
 
-          if (sa.path.length > 0) {
-            sa.path.shift();
-            if (sa.path.length > 0) {
-              sa.targetX = sa.path[0].x;
-              sa.targetY = sa.path[0].y;
-            } else {
-              sa.isMoving = false;
-              const pauseDuration = behavior.pauseMin + Math.random() * (behavior.pauseMax - behavior.pauseMin);
-              sa.pauseUntil = now + pauseDuration;
-            }
-          } else {
-            sa.isMoving = false;
-            const pauseDuration = behavior.pauseMin + Math.random() * (behavior.pauseMax - behavior.pauseMin);
-            sa.pauseUntil = now + pauseDuration;
-          }
-        } else {
-          // Use behavior-specific speed
-          const speed = 0.04 * behavior.speed;
-          sa.x += (dx / dist) * speed;
-          sa.y += (dy / dist) * speed;
+  /**
+   * State-machine-driven subagent behavior
+   */
+  private updateSubagentSM(sa: SubagentState, sm: StateMachine, now: number, deltaMs: number): void {
+    const state = sm.getCurrentState();
+    const meta = state.metadata || {};
 
-          // Random direction change for wanderers (chickens)
-          if (behavior.directionChangeChance > 0 && Math.random() < behavior.directionChangeChance * 0.1) {
-            // Occasionally pick a new random target
-            continue;
-          }
+    // Movement update (same physics regardless of SM vs legacy)
+    if (sa.isMoving) {
+      const speed = 0.04 * ((meta.speed as number) || 1.0);
+      this.moveSubagent(sa, speed);
 
-          if (Math.abs(dx) > Math.abs(dy)) {
-            sa.direction = dx > 0 ? 'right' : 'left';
-          } else {
-            sa.direction = dy > 0 ? 'down' : 'up';
-          }
-        }
-      } else if (now >= sa.pauseUntil) {
+      // Check if movement complete
+      if (!sa.isMoving) {
+        sm.send('movement_complete');
+      }
+    } else {
+      // Advance SM timer when paused
+      sm.update(deltaMs);
+
+      // If state is "wandering" and we're not moving, start a path
+      if (sm.getCurrentStateId() === 'wandering' && !sa.isMoving) {
+        const wanderMeta = sm.getCurrentState().metadata || {};
+        const radius = (wanderMeta.wanderRadius as number) || 5;
+        const preferredTiles = (wanderMeta.preferredTiles as string[]) || undefined;
+
+        const behaviorConfig: AnimalBehaviorConfig = {
+          type: sa.type,
+          behavior: 'wander',
+          speed: (wanderMeta.speed as number) || 1.0,
+          pauseMin: 1000,
+          pauseMax: 3000,
+          wanderRadius: radius,
+          directionChangeChance: (wanderMeta.directionChangeChance as number) || 0.1,
+          preferredTiles,
+        };
+
         const tileX = Math.floor(sa.x / TILE_SIZE);
         const tileY = Math.floor(sa.y / TILE_SIZE);
-
-        // Find candidate tiles based on behavior
-        const candidates = this.findBehaviorTargetTiles(tileX, tileY, behavior);
+        const candidates = this.findBehaviorTargetTiles(tileX, tileY, behaviorConfig);
 
         for (let attempt = 0; attempt < 3 && candidates.length > 0; attempt++) {
           const idx = Math.floor(Math.random() * candidates.length);
@@ -501,6 +623,74 @@ export class GameEngine {
           }
           candidates.splice(idx, 1);
         }
+      }
+    }
+  }
+
+  /**
+   * Legacy subagent behavior (used when no state machine config available)
+   */
+  private updateSubagentLegacy(sa: SubagentState, behavior: AnimalBehaviorConfig, now: number): void {
+    if (sa.isMoving) {
+      const speed = 0.04 * behavior.speed;
+      this.moveSubagent(sa, speed);
+
+      if (!sa.isMoving) {
+        const pauseDuration = behavior.pauseMin + Math.random() * (behavior.pauseMax - behavior.pauseMin);
+        sa.pauseUntil = now + pauseDuration;
+      }
+    } else if (now >= sa.pauseUntil) {
+      const tileX = Math.floor(sa.x / TILE_SIZE);
+      const tileY = Math.floor(sa.y / TILE_SIZE);
+      const candidates = this.findBehaviorTargetTiles(tileX, tileY, behavior);
+
+      for (let attempt = 0; attempt < 3 && candidates.length > 0; attempt++) {
+        const idx = Math.floor(Math.random() * candidates.length);
+        const c = candidates[idx];
+        const path = this.findPath(tileX, tileY, c.tx, c.ty);
+        if (path && path.length > 0) {
+          sa.path = path.map(p => ({ x: (p.x + 0.5) * TILE_SIZE, y: (p.y + 0.5) * TILE_SIZE }));
+          sa.targetX = sa.path[0].x;
+          sa.targetY = sa.path[0].y;
+          sa.isMoving = true;
+          break;
+        }
+        candidates.splice(idx, 1);
+      }
+    }
+  }
+
+  /**
+   * Shared subagent movement physics
+   */
+  private moveSubagent(sa: SubagentState, speed: number): void {
+    const dx = sa.targetX - sa.x;
+    const dy = sa.targetY - sa.y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+
+    if (dist < 1) {
+      sa.x = sa.targetX;
+      sa.y = sa.targetY;
+
+      if (sa.path.length > 0) {
+        sa.path.shift();
+        if (sa.path.length > 0) {
+          sa.targetX = sa.path[0].x;
+          sa.targetY = sa.path[0].y;
+        } else {
+          sa.isMoving = false;
+        }
+      } else {
+        sa.isMoving = false;
+      }
+    } else {
+      sa.x += (dx / dist) * speed;
+      sa.y += (dy / dist) * speed;
+
+      if (Math.abs(dx) > Math.abs(dy)) {
+        sa.direction = dx > 0 ? 'right' : 'left';
+      } else {
+        sa.direction = dy > 0 ? 'down' : 'up';
       }
     }
   }
@@ -745,6 +935,7 @@ export class GameEngine {
     this.updateParticles(now);
     this.updateAnimations(deltaTime);
     this.updateGrowthEffects(now);
+    this.lastUpdateTime = now;
 
     // Update weather if world dimensions are provided
     if (worldWidth !== undefined && worldHeight !== undefined) {
@@ -769,7 +960,25 @@ export class GameEngine {
     this.manifest = manifest;
   }
 
-  spawnSubagent(id: string, type: string): void {
+  loadAnimationSets(sets: Record<string, AnimationSetDef>): void {
+    this.animResolver = new AnimationResolver(sets);
+    console.log(`[Engine] Animation sets loaded: ${Object.keys(sets).join(', ')}`);
+  }
+
+  getAnimationResolver(): AnimationResolver | null {
+    return this.animResolver;
+  }
+
+  spawnSubagent(
+    id: string,
+    type: string,
+    config?: {
+      agentType?: string;
+      displayName?: string;
+      tint?: string | null;
+      stateMachineId?: string;
+    }
+  ): void {
     const target = this.pickWanderTarget() || { x: this.state.agent.x, y: this.state.agent.y };
     this.state.subagents.push({
       id,
@@ -783,10 +992,15 @@ export class GameEngine {
       direction: 'down',
       pauseUntil: performance.now() + 1000,
       path: [],
+      agentType: config?.agentType,
+      displayName: config?.displayName,
+      tint: config?.tint,
+      stateMachineId: config?.stateMachineId,
     });
   }
 
   despawnSubagent(id: string): void {
     this.state.subagents = this.state.subagents.filter(s => s.id !== id);
+    this.subagentSMs.delete(id);
   }
 }

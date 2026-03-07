@@ -76,6 +76,11 @@
           "type": "webview",
           "id": "codemon.terrainConfig",
           "name": "Terrain Config"
+        },
+        {
+          "type": "webview",
+          "id": "codemon.stateMachineEditor",
+          "name": "State Machines"
         }
       ]
     },

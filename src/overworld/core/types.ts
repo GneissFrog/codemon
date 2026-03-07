@@ -38,6 +38,37 @@ export interface AnimationDef {
   loop: boolean;
 }
 
+// ─── Animation Set Types ────────────────────────────────────────────────────
+
+/** A single animation clip — either directional or flat */
+export interface AnimationClipDef {
+  /** Sprite frame names (for directionless animations) */
+  frames?: string[];
+  /** Directional frame variants (overrides flat frames) */
+  directions?: Record<string, { frames: string[] }>;
+  /** Frames per second (default: 10) */
+  fps?: number;
+  /** Whether animation loops (default: true) */
+  loop?: boolean;
+  /** Alias to another animation in the same set */
+  alias?: string;
+}
+
+/** A complete set of animations for one entity type */
+export interface AnimationSetDef {
+  description?: string;
+  /** Which spritesheet these frames reference */
+  spritesheet: string;
+  /** Map of animation name → clip definition */
+  animations: Record<string, AnimationClipDef>;
+}
+
+/** Top-level animation sets config file */
+export interface AnimationSetsConfig {
+  version: number;
+  sets: Record<string, AnimationSetDef>;
+}
+
 export interface CropDef {
   growthStages: string[];
   growthRate: 'activity' | 'tokens' | 'time';

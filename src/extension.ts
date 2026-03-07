@@ -16,6 +16,7 @@ import { getHookServer } from './core/hook-server';
 import { getAssetLoader } from './overworld/core/AssetLoader';
 import { SpriteConfigPanel, getSpriteConfigPanel } from './panels/SpriteConfigPanel';
 import { ModuleEditorPanel, getModuleEditorPanel } from './panels/ModuleEditorPanel';
+import { StateMachineEditorPanel, getStateMachineEditorPanel } from './panels/StateMachineEditorPanel';
 import { TerrainConfigPanel, getTerrainConfigPanel } from './panels/TerrainConfigPanel';
 import { onSettingsChanged, getSettings } from './core/settings';
 import { ActivityEntry, ToolUseEvent, SubagentStartEvent, SubagentStopEvent } from './core/event-types';
@@ -25,6 +26,9 @@ import { WorldGenerator } from './overworld/world/WorldGenerator';
 import { getModuleRegistry } from './overworld/modules/ModuleRegistry';
 import { getContextFarmEngine, ContextFarmEngine } from './context-farm';
 import { AutotilerConfig } from './overworld/core/types';
+import { StateMachine, getStateMachineRegistry } from './state-machine';
+import { getAnimationRegistry } from './animation';
+
 
 let gameViewPanel: GameViewPanel | undefined;
 let budgetBarPanel: ReturnType<typeof getBudgetBarPanel> | undefined;
@@ -33,6 +37,7 @@ let worldMap: WorldMap | undefined;
 let worldGenerator: WorldGenerator | undefined;
 let contextFarmEngine: ContextFarmEngine | undefined;
 let autotilerConfig: AutotilerConfig | undefined;
+let mainAgentSM: StateMachine | undefined;
 
 export function activate(context: vscode.ExtensionContext): void {
   console.log('CodeMon is activating...');
@@ -48,6 +53,8 @@ export function activate(context: vscode.ExtensionContext): void {
   // Initialize asset loader for overworld sprites (must complete before map updates)
   const assetLoader = getAssetLoader(extensionUri);
   const moduleRegistry = getModuleRegistry(extensionUri);
+  const stateMachineRegistry = getStateMachineRegistry(extensionUri);
+  const animationRegistry = getAnimationRegistry(extensionUri);
 
   // Load autotiler config alongside assets and modules
   const loadAutotilerConfig = async (): Promise<void> => {
@@ -65,8 +72,22 @@ export function activate(context: vscode.ExtensionContext): void {
     assetLoader.load(),
     moduleRegistry.load(),
     loadAutotilerConfig(),
+    stateMachineRegistry.load(),
+    animationRegistry.load(),
   ]).then(() => {
-    console.log('[CodeMon] Assets, modules, and terrain config loaded successfully');
+    console.log('[CodeMon] Assets, modules, terrain config, state machines, and animation sets loaded successfully');
+
+    // Create the main agent state machine
+    mainAgentSM = stateMachineRegistry.createMachine('main-agent');
+    if (mainAgentSM) {
+      mainAgentSM.onTransition((event) => {
+        const animation = event.to.animation;
+        if (animation) {
+          gameViewPanel?.setAgentAnimation(animation);
+        }
+      });
+    }
+
     populateMapFromWorkspace();
   }).catch((err) => {
     console.error('[CodeMon] Failed to load assets:', err);
@@ -100,6 +121,15 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.window.registerWebviewViewProvider(
       TerrainConfigPanel.viewType,
       terrainConfigPanel
+    )
+  );
+
+  // Register state machine editor panel
+  const stateMachineEditorPanel = getStateMachineEditorPanel(extensionUri);
+  context.subscriptions.push(
+    vscode.window.registerWebviewViewProvider(
+      StateMachineEditorPanel.viewType,
+      stateMachineEditorPanel
     )
   );
 
@@ -284,8 +314,13 @@ function setupEventRouting(
 
   // Route tool use events to trigger animations AND update map
   eventRouter.on(ROUTER_EVENTS.TOOL_USE, (event: ToolUseEvent) => {
-    const animation = getAnimationForTool(event.toolName);
-    gameViewPanel?.setAgentAnimation(animation);
+    // Drive animation via state machine (falls back to old behavior if SM not loaded)
+    if (mainAgentSM) {
+      mainAgentSM.send(`tool:${event.toolName}`);
+    } else {
+      const animation = getAnimationForTool(event.toolName);
+      gameViewPanel?.setAgentAnimation(animation);
+    }
 
     // Track observed tool and update config
     const configReader = getConfigReader();
@@ -307,19 +342,23 @@ function setupEventRouting(
     }
   });
 
-  // Route subagent events to spawn/despawn animals on the map
-  let activeSubagentCount = 0;
-  const animalTypes = ['chicken', 'cow', 'pig', 'duck'];
+  // Route subagent events — resolve agent type for visual config
+  const smRegistry = getStateMachineRegistry();
 
   eventRouter.on(ROUTER_EVENTS.SUBAGENT_START, (event: SubagentStartEvent) => {
-    const animalType = animalTypes[activeSubagentCount % animalTypes.length];
-    activeSubagentCount++;
-    console.log(`[CodeMon] Subagent start: ${event.subagentId} → spawning ${animalType}`);
-    gameViewPanel?.spawnSubagent(event.subagentId, animalType);
+    const agentTypeConfig = smRegistry.resolveAgentType(event.subagentType);
+    console.log(
+      `[CodeMon] Subagent start: ${event.subagentId} (${event.subagentType || 'unknown'}) → ${agentTypeConfig.sprite} "${agentTypeConfig.displayName}"`
+    );
+    gameViewPanel?.spawnSubagent(event.subagentId, agentTypeConfig.sprite, {
+      agentType: event.subagentType,
+      displayName: agentTypeConfig.displayName,
+      tint: agentTypeConfig.tint,
+      stateMachineId: agentTypeConfig.stateMachine,
+    });
   });
 
   eventRouter.on(ROUTER_EVENTS.SUBAGENT_STOP, (event: SubagentStopEvent) => {
-    activeSubagentCount = Math.max(0, activeSubagentCount - 1);
     console.log(`[CodeMon] Subagent stop: ${event.subagentId}`);
     gameViewPanel?.despawnSubagent(event.subagentId);
   });

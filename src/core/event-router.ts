@@ -43,6 +43,8 @@ export class EventRouter extends EventEmitter {
   private cumulativeCost: number;
   private model: string;
   private pendingToolUse: Map<string, ToolUseEvent>;
+  /** Queue of subagent_type strings from Agent tool_use events, awaiting subagent_start */
+  private pendingSubagentTypes: string[] = [];
 
   constructor() {
     super();
@@ -231,6 +233,12 @@ export class EventRouter extends EventEmitter {
     };
 
     this.pendingToolUse.set(messageId, event);
+
+    // Stash subagent_type from Agent tool_use for later subagent_start correlation
+    if (toolName === 'Agent' && event.toolInput.subagent_type) {
+      this.pendingSubagentTypes.push(event.toolInput.subagent_type as string);
+    }
+
     this.emit(ROUTER_EVENTS.EVENT, event);
     this.emit(ROUTER_EVENTS.TOOL_USE, event);
 
@@ -298,6 +306,13 @@ export class EventRouter extends EventEmitter {
    * Handle subagent start
    */
   private handleSubagentStart(data: Record<string, unknown>): void {
+    // Resolve subagent type: try direct field first, then pending queue from Agent tool_use
+    const subagentType =
+      (data.subagent_type as string) ||
+      (data.subagentType as string) ||
+      this.pendingSubagentTypes.shift() ||
+      undefined;
+
     const event: SubagentStartEvent = {
       id: this.generateId(),
       timestamp: Date.now(),
@@ -305,16 +320,18 @@ export class EventRouter extends EventEmitter {
       type: 'subagent_start',
       subagentId: data.subagentId as string || this.generateId(),
       description: (data.description as string) || 'Subagent spawned',
+      subagentType,
     };
 
     this.emit(ROUTER_EVENTS.EVENT, event);
     this.emit(ROUTER_EVENTS.SUBAGENT_START, event);
 
+    const typeLabel = subagentType ? ` (${subagentType})` : '';
     const activity: ActivityEntry = {
       id: event.id,
       timestamp: event.timestamp,
       icon: '🤖',
-      label: 'Subagent spawned',
+      label: `Subagent spawned${typeLabel}`,
       detail: event.description,
       animation: 'idle',
     };

@@ -111,6 +111,8 @@ export interface SubagentStartEvent extends BaseEvent {
   type: 'subagent_start';
   subagentId: string;
   description: string;
+  /** Agent type from tool_use Agent input, e.g. "bug-analyzer", "code-reviewer" */
+  subagentType?: string;
 }
 
 export interface SubagentStopEvent extends BaseEvent {

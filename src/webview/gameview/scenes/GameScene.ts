@@ -7,6 +7,8 @@
 
 import Phaser from 'phaser';
 import { Tile, Plot, TILE_SIZE, WeatherParticle, AsepriteExportData, AsepriteTagData } from '../types';
+import { AnimationResolver } from '../../../animation/AnimationResolver';
+import type { AnimationSetDef } from '../../../overworld/core/types';
 
 // Input callback types
 export interface InputCallbacks {
@@ -50,6 +52,10 @@ export class GameScene extends Phaser.Scene {
   private asepriteData: AsepriteExportData | null = null;
   private asepriteTags: string[] | undefined;
   private useAsepriteAnimations = false;
+
+  // Animation set resolver
+  private animResolver: AnimationResolver | null = null;
+  private animSetsCreated = false;
 
   // Particle emitters using Phaser's particle system
   private dustEmitter!: Phaser.GameObjects.Particles.ParticleEmitter;
@@ -449,6 +455,63 @@ export class GameScene extends Phaser.Scene {
   }
 
   /**
+   * Set animation sets and create Phaser animations from them.
+   * This creates animations using the resolver for alias resolution.
+   */
+  setAnimationSets(sets: Record<string, AnimationSetDef>): void {
+    this.animResolver = new AnimationResolver(sets);
+
+    // Create Phaser animations for the main-agent set (if available)
+    const mainSet = sets['main-agent'];
+    if (mainSet && this.textures.exists(mainSet.spritesheet)) {
+      for (const [animName, clip] of Object.entries(mainSet.animations)) {
+        if (clip.alias) continue; // Skip aliases — they resolve at lookup time
+
+        if (clip.directions) {
+          for (const [dir, dirDef] of Object.entries(clip.directions)) {
+            const animKey = `agent_${animName}_${dir}`;
+            if (this.anims.exists(animKey)) continue;
+
+            const frames = dirDef.frames.map(f => ({
+              key: mainSet.spritesheet,
+              frame: f,
+            }));
+
+            if (frames.length > 0) {
+              this.anims.create({
+                key: animKey,
+                frames,
+                frameRate: clip.fps ?? 10,
+                repeat: clip.loop !== false ? -1 : 0,
+              });
+            }
+          }
+        } else if (clip.frames) {
+          const animKey = `agent_${animName}`;
+          if (!this.anims.exists(animKey)) {
+            const frames = clip.frames.map(f => ({
+              key: mainSet.spritesheet,
+              frame: f,
+            }));
+
+            if (frames.length > 0) {
+              this.anims.create({
+                key: animKey,
+                frames,
+                frameRate: clip.fps ?? 10,
+                repeat: clip.loop !== false ? -1 : 0,
+              });
+            }
+          }
+        }
+      }
+
+      this.animSetsCreated = true;
+      console.log(`[GameScene] Animation set Phaser animations created for main-agent`);
+    }
+  }
+
+  /**
    * Update agent sprite position and animation
    */
   updateAgentSprite(x: number, y: number, action: string, direction: string): void {
@@ -462,8 +525,23 @@ export class GameScene extends Phaser.Scene {
     // Update position
     this.agentSprite.setPosition(x, y);
 
+    // If animation resolver is available, resolve aliases first
+    // e.g., "investigate" → "hoe", "write" → "water"
+    let resolvedAction = action;
+    if (this.animResolver) {
+      const resolved = this.animResolver.resolve('main-agent', action, direction);
+      if (resolved && resolved.frames.length > 0) {
+        // Extract the action name from the first frame (e.g., "char-hoe-down-0" → "hoe")
+        const firstFrame = resolved.frames[0];
+        const match = firstFrame.match(/^char-(\w+)-/);
+        if (match) {
+          resolvedAction = match[1];
+        }
+      }
+    }
+
     // Normalize action and direction using configured values
-    const normalizedAction = this.agentActions.includes(action) ? action : (this.agentActions[0] || 'idle');
+    const normalizedAction = this.agentActions.includes(resolvedAction) ? resolvedAction : (this.agentActions[0] || 'idle');
     const normalizedDirection = this.agentDirections.includes(direction) ? direction : (this.agentDirections[0] || 'down');
 
     // Try multiple animation key formats
@@ -915,6 +993,26 @@ export class GameScene extends Phaser.Scene {
 
     this.charactersLayer.add(sprite);
     return true;
+  }
+
+  /**
+   * Draw a tinted sprite at position (for subagent type differentiation)
+   */
+  drawSpriteTinted(id: string, x: number, y: number, w?: number, h?: number, tint?: string): boolean {
+    const drawn = this.drawSprite(id, x, y, w, h);
+    if (drawn && tint) {
+      // Get the last sprite we just drew (most recently activated in the pool)
+      const sprites = this.dynamicSpriteGroup.getChildren() as Phaser.GameObjects.Sprite[];
+      for (let i = sprites.length - 1; i >= 0; i--) {
+        const s = sprites[i];
+        if (s.active && s.visible && s.x === x && s.y === y) {
+          const color = parseInt(tint.replace('#', ''), 16);
+          s.setTint(color);
+          break;
+        }
+      }
+    }
+    return drawn;
   }
 
   // ─── Graphics ────────────────────────────────────────────────────────────

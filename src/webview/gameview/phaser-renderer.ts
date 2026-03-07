@@ -12,6 +12,7 @@ import Phaser from 'phaser';
 import { Renderer, WebviewAssetData, Tile, ViewportBounds, TILE_SIZE, PointLight, LightingState, AsepriteExportData, AsepriteTagData } from './types';
 import { BootScene, GameScene, UIScene } from './scenes';
 import { LightingManager } from './LightingManager';
+import type { AnimationSetDef } from '../../overworld/core/types';
 
 export class PhaserRenderer implements Renderer {
   private game: Phaser.Game | null = null;
@@ -274,6 +275,20 @@ export class PhaserRenderer implements Renderer {
         }
       }
     }
+
+    // Load animation sets if provided
+    if (this.gameScene && assets.animationSets) {
+      this.gameScene.setAnimationSets(assets.animationSets);
+    }
+  }
+
+  /**
+   * Set animation sets on the game scene
+   */
+  setAnimationSets(sets: Record<string, AnimationSetDef>): void {
+    if (this.gameScene) {
+      this.gameScene.setAnimationSets(sets);
+    }
   }
 
   /**
@@ -434,6 +449,11 @@ export class PhaserRenderer implements Renderer {
   drawSprite(id: string, x: number, y: number, w?: number, h?: number): boolean {
     if (!this.gameScene) return false;
     return this.gameScene.drawSprite(id, x, y, w, h);
+  }
+
+  drawSpriteTinted(id: string, x: number, y: number, w?: number, h?: number, tint?: string): boolean {
+    if (!this.gameScene) return false;
+    return this.gameScene.drawSpriteTinted(id, x, y, w, h, tint);
   }
 
   drawRect(x: number, y: number, w: number, h: number, color: string, alpha: number): void {

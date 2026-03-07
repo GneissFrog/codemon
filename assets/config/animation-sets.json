@@ -1,0 +1,109 @@
+{
+  "version": 1,
+  "sets": {
+    "main-agent": {
+      "description": "Main Claude agent — character spritesheet animations",
+      "spritesheet": "claude-actions",
+      "animations": {
+        "idle": {
+          "directions": {
+            "down":  { "frames": ["char-idle-down-0","char-idle-down-1","char-idle-down-2","char-idle-down-3","char-idle-down-4","char-idle-down-5","char-idle-down-6","char-idle-down-7"] },
+            "up":    { "frames": ["char-idle-up-0","char-idle-up-1","char-idle-up-2","char-idle-up-3","char-idle-up-4","char-idle-up-5","char-idle-up-6","char-idle-up-7"] },
+            "left":  { "frames": ["char-idle-left-0","char-idle-left-1","char-idle-left-2","char-idle-left-3","char-idle-left-4","char-idle-left-5","char-idle-left-6","char-idle-left-7"] },
+            "right": { "frames": ["char-idle-right-0","char-idle-right-1","char-idle-right-2","char-idle-right-3","char-idle-right-4","char-idle-right-5","char-idle-right-6","char-idle-right-7"] }
+          },
+          "fps": 10,
+          "loop": true
+        },
+        "walk": {
+          "directions": {
+            "down":  { "frames": ["char-walk-down-0","char-walk-down-1","char-walk-down-2","char-walk-down-3","char-walk-down-4","char-walk-down-5","char-walk-down-6","char-walk-down-7"] },
+            "up":    { "frames": ["char-walk-up-0","char-walk-up-1","char-walk-up-2","char-walk-up-3","char-walk-up-4","char-walk-up-5","char-walk-up-6","char-walk-up-7"] },
+            "left":  { "frames": ["char-walk-left-0","char-walk-left-1","char-walk-left-2","char-walk-left-3","char-walk-left-4","char-walk-left-5","char-walk-left-6","char-walk-left-7"] },
+            "right": { "frames": ["char-walk-right-0","char-walk-right-1","char-walk-right-2","char-walk-right-3","char-walk-right-4","char-walk-right-5","char-walk-right-6","char-walk-right-7"] }
+          },
+          "fps": 10,
+          "loop": true
+        },
+        "hoe": {
+          "directions": {
+            "down":  { "frames": ["char-hoe-down-0","char-hoe-down-1","char-hoe-down-2","char-hoe-down-3","char-hoe-down-4","char-hoe-down-5","char-hoe-down-6","char-hoe-down-7"] },
+            "up":    { "frames": ["char-hoe-up-0","char-hoe-up-1","char-hoe-up-2","char-hoe-up-3","char-hoe-up-4","char-hoe-up-5","char-hoe-up-6","char-hoe-up-7"] },
+            "left":  { "frames": ["char-hoe-left-0","char-hoe-left-1","char-hoe-left-2","char-hoe-left-3","char-hoe-left-4","char-hoe-left-5","char-hoe-left-6","char-hoe-left-7"] },
+            "right": { "frames": ["char-hoe-right-0","char-hoe-right-1","char-hoe-right-2","char-hoe-right-3","char-hoe-right-4","char-hoe-right-5","char-hoe-right-6","char-hoe-right-7"] }
+          },
+          "fps": 10,
+          "loop": false
+        },
+        "water": {
+          "directions": {
+            "down":  { "frames": ["char-water-down-0","char-water-down-1","char-water-down-2","char-water-down-3","char-water-down-4","char-water-down-5","char-water-down-6","char-water-down-7","char-water-down-8","char-water-down-9"] },
+            "up":    { "frames": ["char-water-up-0","char-water-up-1","char-water-up-2","char-water-up-3","char-water-up-4","char-water-up-5","char-water-up-6","char-water-up-7","char-water-up-8","char-water-up-9"] },
+            "left":  { "frames": ["char-water-left-0","char-water-left-1","char-water-left-2","char-water-left-3","char-water-left-4","char-water-left-5","char-water-left-6","char-water-left-7","char-water-left-8","char-water-left-9"] },
+            "right": { "frames": ["char-water-right-0","char-water-right-1","char-water-right-2","char-water-right-3","char-water-right-4","char-water-right-5","char-water-right-6","char-water-right-7","char-water-right-8","char-water-right-9"] }
+          },
+          "fps": 10,
+          "loop": false
+        },
+        "plant": {
+          "directions": {
+            "down":  { "frames": ["char-plant-down-0","char-plant-down-1","char-plant-down-2","char-plant-down-3","char-plant-down-4","char-plant-down-5"] },
+            "up":    { "frames": ["char-plant-up-0","char-plant-up-1","char-plant-up-2","char-plant-up-3","char-plant-up-4","char-plant-up-5"] },
+            "left":  { "frames": ["char-plant-left-0","char-plant-left-1","char-plant-left-2","char-plant-left-3","char-plant-left-4","char-plant-left-5"] },
+            "right": { "frames": ["char-plant-right-0","char-plant-right-1","char-plant-right-2","char-plant-right-3","char-plant-right-4","char-plant-right-5"] }
+          },
+          "fps": 10,
+          "loop": false
+        },
+        "harvest": {
+          "directions": {
+            "down":  { "frames": ["char-harvest-down-0","char-harvest-down-1","char-harvest-down-2","char-harvest-down-3","char-harvest-down-4","char-harvest-down-5"] },
+            "up":    { "frames": ["char-harvest-up-0","char-harvest-up-1","char-harvest-up-2","char-harvest-up-3","char-harvest-up-4","char-harvest-up-5"] },
+            "left":  { "frames": ["char-harvest-left-0","char-harvest-left-1","char-harvest-left-2","char-harvest-left-3","char-harvest-left-4","char-harvest-left-5"] },
+            "right": { "frames": ["char-harvest-right-0","char-harvest-right-1","char-harvest-right-2","char-harvest-right-3","char-harvest-right-4","char-harvest-right-5"] }
+          },
+          "fps": 10,
+          "loop": false
+        },
+        "investigate": { "alias": "hoe" },
+        "write": { "alias": "water" },
+        "bash": { "alias": "plant" },
+        "think": { "alias": "idle" },
+        "error": { "alias": "idle" },
+        "success": { "alias": "harvest" }
+      }
+    },
+    "chicken": {
+      "description": "Chicken — fast erratic wanderer",
+      "spritesheet": "chicken",
+      "animations": {
+        "idle": { "frames": ["chicken-0","chicken-1","chicken-2","chicken-3"], "fps": 4, "loop": true },
+        "walk": { "frames": ["chicken-4","chicken-5","chicken-6","chicken-7"], "fps": 6, "loop": true }
+      }
+    },
+    "cow": {
+      "description": "Cow — slow grazer",
+      "spritesheet": "cow",
+      "animations": {
+        "idle": { "frames": ["cow-0","cow-1","cow-2","cow-3","cow-4","cow-5"], "fps": 3, "loop": true },
+        "walk": { "frames": ["cow-6","cow-7","cow-8","cow-9","cow-10","cow-11"], "fps": 4, "loop": true }
+      }
+    },
+    "pig": {
+      "description": "Pig — moderate forager",
+      "spritesheet": "pig",
+      "animations": {
+        "idle": { "frames": ["pig-0","pig-1","pig-2","pig-3"], "fps": 4, "loop": true },
+        "walk": { "frames": ["pig-4","pig-5","pig-6","pig-7"], "fps": 5, "loop": true }
+      }
+    },
+    "duck": {
+      "description": "Duck — water-loving swimmer",
+      "spritesheet": "duck",
+      "animations": {
+        "idle": { "frames": ["duck-0","duck-1","duck-2","duck-3"], "fps": 4, "loop": true },
+        "walk": { "frames": ["duck-4","duck-5","duck-6","duck-7"], "fps": 6, "loop": true }
+      }
+    }
+  }
+}

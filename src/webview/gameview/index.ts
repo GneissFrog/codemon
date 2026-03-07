@@ -21,6 +21,8 @@ import {
   TILE_SIZE,
   ActivityEntry,
 } from './types';
+import { StateMachine } from '../../state-machine/StateMachine';
+import type { StateMachineConfig, AgentTypeConfig } from '../../state-machine/types';
 
 // ─── Configuration ────────────────────────────────────────────────────────
 
@@ -208,10 +210,34 @@ function renderMap(): void {
   // Draw agent
   drawAgent();
 
-  // Draw subagents
+  // Draw subagents (with optional tint and name labels)
+  const animResolver = engine.getAnimationResolver();
   for (const sa of engine.state.subagents) {
-    const spriteId = `${sa.type}/${sa.type}-${sa.frameIndex}`;
-    renderer.drawSprite(spriteId, sa.x - 8, sa.y - 8, 16, 16);
+    // Resolve sprite ID through animation sets if available
+    let spriteId: string;
+    const animSetId = sa.animationSet || sa.type;
+    const animName = sa.currentAnimation || (sa.isMoving ? 'walk' : 'idle');
+
+    if (animResolver && animResolver.hasSet(animSetId)) {
+      const frames = animResolver.getFrames(animSetId, animName);
+      const frameIdx = sa.frameIndex % (frames.length || 1);
+      const sheet = animResolver.getSpritesheet(animSetId) || sa.type;
+      spriteId = `${sheet}/${frames[frameIdx] || `${sa.type}-0`}`;
+    } else {
+      spriteId = `${sa.type}/${sa.type}-${sa.frameIndex}`;
+    }
+
+    // Apply tint if available
+    if (sa.tint) {
+      (renderer as PhaserRenderer).drawSpriteTinted?.(spriteId, sa.x - 8, sa.y - 8, 16, 16, sa.tint);
+    } else {
+      renderer.drawSprite(spriteId, sa.x - 8, sa.y - 8, 16, 16);
+    }
+
+    // Draw name label above sprite
+    if (sa.displayName) {
+      renderer.drawText(sa.displayName, sa.x, sa.y - 14, sa.tint || '#ffffff', 7);
+    }
   }
 
   // Draw growth effects using Phaser particles
@@ -451,7 +477,12 @@ function setupMessageHandler(): void {
         break;
 
       case 'spawnSubagent':
-        engine.spawnSubagent(message.id, message.agentType);
+        engine.spawnSubagent(message.id, message.agentType, {
+          agentType: message.agentType,
+          displayName: message.displayName,
+          tint: message.tint,
+          stateMachineId: message.stateMachineId,
+        });
         break;
 
       case 'despawnSubagent':
@@ -467,6 +498,17 @@ function setupMessageHandler(): void {
       case 'updateContextFarm':
         handleContextFarmUpdate(message.state);
         break;
+
+      case 'updateStateMachines':
+        engine.loadStateMachineConfigs(
+          message.machines as Record<string, StateMachineConfig>,
+          message.agentTypes as Record<string, AgentTypeConfig>
+        );
+        break;
+
+      case 'updateAnimationSets':
+        engine.loadAnimationSets(message.sets);
+        break;
     }
   });
 }
@@ -476,6 +518,10 @@ async function loadAssets(assets: WebviewAssetData): Promise<void> {
 
   if ((assets as any).manifest) {
     engine.setManifest((assets as any).manifest);
+  }
+
+  if (assets.animationSets) {
+    engine.loadAnimationSets(assets.animationSets);
   }
 }
 

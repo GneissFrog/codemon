@@ -214,23 +214,24 @@ export class HookServer extends EventEmitter {
         break;
 
       case 'SubagentStart':
-        router.emit(ROUTER_EVENTS.EVENT, {
+        router.emit(ROUTER_EVENTS.SUBAGENT_START, {
           id: this.generateId(),
           timestamp: Date.now(),
           sessionId,
           type: 'subagent_start',
-          subagentId: this.generateId(),
-          description: 'Subagent spawned',
+          subagentId: event.subagent_id || this.generateId(),
+          description: event.description || 'Subagent spawned',
+          subagentType: event.subagent_type || undefined,
         });
         break;
 
       case 'SubagentStop':
-        router.emit(ROUTER_EVENTS.EVENT, {
+        router.emit(ROUTER_EVENTS.SUBAGENT_STOP, {
           id: this.generateId(),
           timestamp: Date.now(),
           sessionId,
           type: 'subagent_stop',
-          subagentId: '',
+          subagentId: event.subagent_id || '',
         });
         break;
 

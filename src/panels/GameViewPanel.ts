@@ -13,6 +13,8 @@ import { BudgetStatus } from '../core/budget-tracker';
 import { getAssetLoader, WebviewAssetData } from '../overworld/core/AssetLoader';
 import { SerializedWorldMap } from '../overworld/core/types';
 import { SerializedContextFarmState } from '../context-farm/types';
+import { getStateMachineRegistry } from '../state-machine';
+import { getAnimationRegistry } from '../animation';
 
 interface AgentPosition {
   x: number;
@@ -137,6 +139,29 @@ export class GameViewPanel {
         entry,
       });
     }
+
+    // Send state machine configs
+    try {
+      const smRegistry = getStateMachineRegistry();
+      const smConfigs = smRegistry.getSerializableConfig();
+      this._panel.webview.postMessage({
+        type: 'updateStateMachines',
+        ...smConfigs,
+      });
+    } catch {
+      // Registry not initialized yet — configs will be sent later
+    }
+
+    // Send animation set configs
+    try {
+      const animRegistry = getAnimationRegistry();
+      this._panel.webview.postMessage({
+        type: 'updateAnimationSets',
+        sets: animRegistry.getSerializableConfig(),
+      });
+    } catch {
+      // Registry not initialized yet — configs will be sent later
+    }
   }
 
   /**
@@ -257,14 +282,24 @@ export class GameViewPanel {
   }
 
   /**
-   * Spawn a subagent animal on the map
+   * Spawn a subagent on the map with optional type-aware visual config
    */
-  public spawnSubagent(id: string, agentType: string): void {
+  public spawnSubagent(
+    id: string,
+    agentType: string,
+    config?: {
+      agentType?: string;
+      displayName?: string;
+      tint?: string | null;
+      stateMachineId?: string;
+    }
+  ): void {
     if (this._panel) {
       this._panel.webview.postMessage({
         type: 'spawnSubagent',
         id,
         agentType,
+        ...config,
       });
     }
   }

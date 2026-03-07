@@ -13,7 +13,8 @@ import { getNonce } from './panel-utils';
 import { PIXEL_THEME_CSS } from '../webview/shared/pixel-theme';
 import { getAssetLoader, WebviewAssetData, migrateCharacterConfig } from '../overworld/core/AssetLoader';
 import { getGameViewPanel } from './GameViewPanel';
-import { CharacterConfig, ActionConfig } from '../overworld/core/types';
+import { CharacterConfig, ActionConfig, AnimationSetDef } from '../overworld/core/types';
+import { getAnimationRegistry } from '../animation/AnimationRegistry';
 
 export class SpriteConfigPanel implements vscode.WebviewViewProvider {
   public static readonly viewType = 'codemon.spriteConfig';
@@ -113,6 +114,18 @@ export class SpriteConfigPanel implements vscode.WebviewViewProvider {
         case 'updateAsepriteConfig':
           await this._updateAsepriteConfig(message.data as { sheetName: string; asepriteConfig: { jsonFile: string; tags?: string[] } | null });
           break;
+        case 'loadAnimationSets':
+          await this._sendAnimationSets();
+          break;
+        case 'saveAnimationSet':
+          await this._saveAnimationSet(message.data as { id: string; set: AnimationSetDef });
+          break;
+        case 'deleteAnimationSet':
+          await this._deleteAnimationSet((message.data as { id: string }).id);
+          break;
+        case 'createAnimationSet':
+          await this._createAnimationSet(message.data as { id: string; spritesheet: string });
+          break;
       }
     });
   }
@@ -133,6 +146,9 @@ export class SpriteConfigPanel implements vscode.WebviewViewProvider {
         type: 'loadAssets',
         assets,
       });
+
+      // Also send animation sets
+      await this._sendAnimationSets();
     } catch (error) {
       console.error('[SpriteConfig] Failed to load assets:', error);
     }
@@ -691,6 +707,46 @@ export class SpriteConfigPanel implements vscode.WebviewViewProvider {
     }
   }
 
+  // ─── Animation Sets ──────────────────────────────────────────────────
+
+  private async _sendAnimationSets(): Promise<void> {
+    if (!this._view) return;
+    try {
+      const registry = getAnimationRegistry(this._extensionUri);
+      if (!registry.getAllSets().size) await registry.load();
+      this._view.webview.postMessage({
+        type: 'loadAnimationSets',
+        sets: registry.getSerializableConfig(),
+      });
+    } catch (e) {
+      console.warn('[SpriteConfig] Failed to send animation sets:', e);
+    }
+  }
+
+  private async _saveAnimationSet(data: { id: string; set: AnimationSetDef }): Promise<void> {
+    const registry = getAnimationRegistry(this._extensionUri);
+    registry.setAnimationSet(data.id, data.set);
+    await registry.save();
+    await this._sendAnimationSets();
+  }
+
+  private async _deleteAnimationSet(id: string): Promise<void> {
+    const registry = getAnimationRegistry(this._extensionUri);
+    registry.deleteAnimationSet(id);
+    await registry.save();
+    await this._sendAnimationSets();
+  }
+
+  private async _createAnimationSet(data: { id: string; spritesheet: string }): Promise<void> {
+    const registry = getAnimationRegistry(this._extensionUri);
+    registry.setAnimationSet(data.id, {
+      spritesheet: data.spritesheet,
+      animations: { idle: { frames: [], fps: 4, loop: true } },
+    });
+    await registry.save();
+    await this._sendAnimationSets();
+  }
+
   private _getHtmlForWebview(webview: vscode.Webview): string {
     const nonce = getNonce();
 
@@ -926,19 +982,32 @@ export class SpriteConfigPanel implements vscode.WebviewViewProvider {
       padding: 8px;
     }
 
-    .sprite-info-row {
+    .sprite-info-selected-row {
       display: flex;
-      justify-content: space-between;
-      margin-bottom: 4px;
+      align-items: center;
+      gap: 8px;
+    }
+    .selected-sprite-canvas-inline {
+      width: 32px; height: 32px;
+      image-rendering: pixelated;
+      background: repeating-conic-gradient(#333 0% 25%, #222 0% 50%) 50% / 8px 8px;
+      border: 1px solid var(--pixel-border);
+      flex-shrink: 0;
+    }
+    .sprite-info-selected-details {
+      flex: 1;
+      min-width: 0;
+    }
+    .selected-sprite-title-inline {
       font-size: 9px;
+      color: var(--pixel-accent);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
-
-    .sprite-info-label {
+    .sprite-info-meta {
+      font-size: 8px;
       color: var(--pixel-muted);
-    }
-
-    .sprite-info-value {
-      color: var(--pixel-fg);
       font-family: monospace;
     }
 
@@ -949,12 +1018,7 @@ export class SpriteConfigPanel implements vscode.WebviewViewProvider {
       pointer-events: none;
     }
 
-    .selected-sprite-preview {
-      margin-top: 8px;
-      padding: 8px;
-      background: var(--pixel-bg);
-      border: 1px solid var(--pixel-border);
-    }
+    /* selected-sprite-preview removed — absorbed into sprite-info-panel */
 
     /* Aseprite Config Panel */
     .aseprite-config-panel {
@@ -1043,21 +1107,26 @@ export class SpriteConfigPanel implements vscode.WebviewViewProvider {
       line-height: 1.4;
     }
 
-    .selected-sprite-title {
-      font-size: 10px;
-      color: var(--pixel-accent);
+    /* old .selected-sprite-title + .selected-sprite-canvas removed — now inline */
+
+    .sprite-filter-input {
+      width: 100%;
+      padding: 4px 6px;
+      font-size: 9px;
+      font-family: inherit;
+      background: var(--pixel-bg);
+      border: 1px solid var(--pixel-border);
+      color: var(--pixel-fg);
       margin-bottom: 4px;
+      box-sizing: border-box;
     }
-
-    .selected-sprite-canvas {
-      image-rendering: pixelated;
-      background: repeating-conic-gradient(#333 0% 25%, #222 0% 50%) 50% / 8px 8px;
+    .sprite-filter-input:focus {
+      outline: none;
+      border-color: var(--pixel-accent);
     }
-
     .sprite-list {
       max-height: 150px;
       overflow-y: auto;
-      margin-top: 8px;
     }
 
     .sprite-item {
@@ -1400,92 +1469,7 @@ export class SpriteConfigPanel implements vscode.WebviewViewProvider {
       color: var(--pixel-accent);
     }
 
-    /* Character Preview Section */
-    .character-preview {
-      margin-top: 8px;
-      padding: 8px;
-      background: var(--pixel-bg-light);
-      border: 1px solid var(--pixel-accent);
-    }
-
-    .character-preview-title {
-      font-size: 10px;
-      color: var(--pixel-accent);
-      margin-bottom: 8px;
-      display: flex;
-      align-items: center;
-      gap: 6px;
-    }
-
-    .character-preview-title::before {
-      content: '👤';
-    }
-
-    .character-canvas-container {
-      display: flex;
-      justify-content: center;
-      margin-bottom: 8px;
-      background: repeating-conic-gradient(#333 0% 25%, #222 0% 50%) 50% / 8px 8px;
-      border: 1px solid var(--pixel-border);
-      padding: 8px;
-    }
-
-    #character-canvas {
-      image-rendering: pixelated;
-    }
-
-    .character-controls {
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-    }
-
-    .control-row {
-      display: flex;
-      align-items: center;
-      gap: 4px;
-    }
-
-    .control-label {
-      font-size: 9px;
-      color: var(--pixel-muted);
-      width: 50px;
-      flex-shrink: 0;
-    }
-
-    .control-btns {
-      display: flex;
-      gap: 2px;
-      flex: 1;
-    }
-
-    .dir-btn, .action-btn-char {
-      flex: 1;
-      padding: 4px;
-      background: var(--pixel-bg);
-      border: 1px solid var(--pixel-border);
-      color: var(--pixel-fg);
-      cursor: pointer;
-      font-size: 9px;
-    }
-
-    .dir-btn:hover, .action-btn-char:hover {
-      background: var(--pixel-bg-lighter);
-    }
-
-    .dir-btn.active, .action-btn-char.active {
-      border-color: var(--pixel-accent);
-      background: var(--pixel-bg-light);
-      color: var(--pixel-accent);
-    }
-
-    .animation-toggle {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      margin-top: 4px;
-    }
-
+    /* Toggle Switch (used by Lighting) */
     .toggle-switch {
       position: relative;
       width: 32px;
@@ -1517,100 +1501,6 @@ export class SpriteConfigPanel implements vscode.WebviewViewProvider {
     .toggle-label {
       font-size: 9px;
       color: var(--pixel-fg);
-    }
-
-    .character-sprite-name {
-      font-size: 9px;
-      color: var(--pixel-muted);
-      text-align: center;
-      margin-top: 4px;
-      font-family: monospace;
-    }
-
-    /* Action Editor Section */
-    .action-editor-section {
-      margin-top: 8px;
-      padding: 8px;
-      background: var(--pixel-bg-light);
-      border: 1px solid var(--pixel-border);
-    }
-
-    .actions-list {
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-      margin-bottom: 8px;
-      max-height: 200px;
-      overflow-y: auto;
-    }
-
-    .action-item {
-      background: var(--pixel-bg);
-      border: 1px solid var(--pixel-border);
-      padding: 6px;
-    }
-
-    .action-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 4px;
-    }
-
-    .action-name-display {
-      font-weight: bold;
-      color: var(--pixel-accent);
-      font-size: 10px;
-    }
-
-    .btn-icon {
-      background: transparent;
-      border: none;
-      color: var(--pixel-error, #f44);
-      cursor: pointer;
-      font-size: 10px;
-      padding: 2px 4px;
-    }
-
-    .btn-icon:hover {
-      color: var(--pixel-fg);
-    }
-
-    .action-config-row {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      margin-top: 4px;
-    }
-
-    .config-label {
-      font-size: 9px;
-      color: var(--pixel-muted);
-      min-width: 40px;
-    }
-
-    .skill-select {
-      flex: 1;
-      font-size: 9px;
-      background: var(--pixel-bg);
-      border: 1px solid var(--pixel-border);
-      color: var(--pixel-fg);
-      padding: 2px 4px;
-    }
-
-    .custom-skill-input {
-      flex: 1;
-      min-width: 0;
-    }
-
-    .add-action-row {
-      display: flex;
-      gap: 6px;
-      margin-top: 8px;
-    }
-
-    .add-action-row .edit-input {
-      flex: 1;
     }
 
     .btn-row {
@@ -1717,60 +1607,102 @@ export class SpriteConfigPanel implements vscode.WebviewViewProvider {
       background: var(--pixel-bg);
       border: 1px solid var(--pixel-border);
     }
+
+    /* Animation Sets Section */
+    .anim-set-controls { display: flex; gap: 4px; margin-bottom: 8px; }
+    .anim-set-controls select { flex: 1; font-size: 9px; background: var(--pixel-bg); border: 1px solid var(--pixel-border); color: var(--pixel-fg); padding: 3px 4px; }
+    /* Sticky Pick-Mode Toolbar */
+    .pick-mode-toolbar {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      background: var(--pixel-accent);
+      color: var(--pixel-bg);
+      padding: 4px 8px;
+      display: none;
+      margin: -8px -8px 8px -8px;
+      border-bottom: 2px solid color-mix(in srgb, var(--pixel-accent) 80%, #000);
+    }
+    .pick-mode-toolbar.active { display: block; }
+    .pick-toolbar-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 9px;
+      font-weight: bold;
+      margin-bottom: 3px;
+    }
+    .pick-toolbar-header button {
+      font-size: 8px;
+      padding: 2px 8px;
+      background: var(--pixel-bg);
+      color: var(--pixel-fg);
+      border: 1px solid var(--pixel-border);
+      cursor: pointer;
+      font-family: inherit;
+    }
+    .pick-toolbar-header button:hover {
+      background: var(--pixel-bg-lighter);
+    }
+    .pick-toolbar-strip {
+      display: flex;
+      gap: 2px;
+      overflow-x: auto;
+      padding: 2px 0;
+      min-height: 24px;
+      align-items: center;
+    }
+    .pick-toolbar-strip:empty::after {
+      content: 'Click sprites above to add frames';
+      font-size: 8px;
+      opacity: 0.7;
+    }
+    .pick-toolbar-frame {
+      width: 24px; height: 24px;
+      border: 1px solid rgba(0,0,0,0.3);
+      flex-shrink: 0;
+    }
+    .pick-toolbar-frame canvas {
+      width: 24px; height: 24px;
+      image-rendering: pixelated;
+    }
+
+    .anim-list-container { max-height: 160px; overflow-y: auto; margin-bottom: 8px; }
+    .anim-item { display: flex; justify-content: space-between; align-items: center; padding: 4px 6px; border-bottom: 1px solid var(--pixel-border); cursor: pointer; font-size: 9px; }
+    .anim-item:hover { background: var(--pixel-bg-lighter); }
+    .anim-item.selected { background: var(--pixel-bg-lighter); border-left: 3px solid var(--pixel-accent); }
+    .anim-alias-badge { color: #b877db; font-size: 8px; }
+    .anim-meta-info { color: var(--pixel-muted); font-size: 8px; }
+    .pick-mode-active #sprite-canvas { cursor: cell !important; }
+    .frame-strip { display: flex; flex-wrap: wrap; gap: 3px; padding: 4px; background: var(--pixel-bg); border: 1px solid var(--pixel-border); min-height: 30px; max-height: 90px; overflow-y: auto; }
+    .frame-strip-item { position: relative; width: 28px; height: 28px; border: 1px solid var(--pixel-border); }
+    .frame-strip-item canvas { width: 28px; height: 28px; image-rendering: pixelated; }
+    .frame-strip-item .frame-index { position: absolute; bottom: 0; right: 0; font-size: 6px; background: rgba(0,0,0,0.7); color: var(--pixel-fg); padding: 0 2px; line-height: 1.2; }
+    .frame-strip-item .frame-remove { position: absolute; top: -4px; right: -4px; width: 12px; height: 12px; background: #e74c3c; color: #fff; border: none; font-size: 7px; cursor: pointer; display: none; line-height: 12px; text-align: center; border-radius: 50%; }
+    .frame-strip-item:hover .frame-remove { display: block; }
+    .frame-strip-empty { color: var(--pixel-muted); font-size: 8px; padding: 8px; text-align: center; width: 100%; }
+    .dir-tabs { display: flex; gap: 2px; margin-bottom: 6px; }
+    .dir-tab { flex: 1; padding: 3px; background: var(--pixel-bg); border: 1px solid var(--pixel-border); color: var(--pixel-muted); cursor: pointer; font-size: 8px; text-align: center; font-family: inherit; }
+    .dir-tab.active { background: var(--pixel-bg-light); border-color: var(--pixel-accent); color: var(--pixel-accent); }
+    .anim-preview-box { display: flex; justify-content: center; padding: 6px; background: repeating-conic-gradient(#333 0% 25%, #222 0% 50%) 50% / 8px 8px; border: 1px solid var(--pixel-border); margin-top: 6px; }
+    .anim-preview-box canvas { image-rendering: pixelated; }
   </style>
 </head>
 <body>
   <div class="sprite-config">
+    <div class="pick-mode-toolbar" id="pick-mode-toolbar">
+      <div class="pick-toolbar-header">
+        <span>PICK MODE</span>
+        <span id="pick-frame-count">0 frames</span>
+        <button id="btn-pick-done">Done</button>
+      </div>
+      <div class="pick-toolbar-strip" id="pick-toolbar-strip"></div>
+    </div>
+
     <div class="section-title" data-section="spritesheets">Spritesheets</div>
     <div class="section-content" data-section="spritesheets">
       <div class="spritesheet-list" id="spritesheet-list">
         <div style="color: var(--pixel-muted); font-size: 9px;">Loading...</div>
-      </div>
-    </div>
-
-    <div class="section-title" data-section="lighting">Lighting</div>
-    <div class="section-content" data-section="lighting">
-      <div class="lighting-section">
-        <div class="lighting-row">
-          <span class="lighting-label">Enable Lighting</span>
-          <div class="toggle-switch active" id="lighting-enabled"></div>
-        </div>
-
-        <div class="lighting-row">
-          <span class="lighting-label">Day/Night Cycle</span>
-          <div class="toggle-switch active" id="lighting-daynight"></div>
-        </div>
-
-        <div class="lighting-row">
-          <span class="lighting-label">Agent Torch</span>
-          <div class="toggle-switch active" id="lighting-agent-torch"></div>
-        </div>
-
-        <div class="lighting-slider-row">
-          <div class="lighting-slider-label">
-            <span>Torch Radius</span>
-            <span class="lighting-slider-value" id="torch-radius-value">80</span>
-          </div>
-          <input type="range" id="torch-radius" min="20" max="200" value="80">
-        </div>
-
-        <div class="lighting-slider-row">
-          <div class="lighting-slider-label">
-            <span>Torch Intensity</span>
-            <span class="lighting-slider-value" id="torch-intensity-value">0.8</span>
-          </div>
-          <input type="range" id="torch-intensity" min="0" max="100" value="80">
-        </div>
-
-        <div class="color-picker-row">
-          <span class="lighting-label">Torch Color</span>
-          <input type="color" id="torch-color" value="#ffaa44">
-          <span class="color-hex" id="torch-color-hex">#ffaa44</span>
-        </div>
-
-        <div class="lighting-help">
-          Normal maps require spritesheets with _n.png suffix (e.g., tiles_n.png). Without normal maps, only point light falloff is visible.
-        </div>
       </div>
     </div>
 
@@ -1797,28 +1729,17 @@ export class SpriteConfigPanel implements vscode.WebviewViewProvider {
         <canvas id="sprite-canvas"></canvas>
       </div>
       <div class="sprite-info-panel">
-        <div class="sprite-info-row">
-          <span class="sprite-info-label">Position:</span>
-          <span class="sprite-info-value" id="info-pos">-</span>
-        </div>
-        <div class="sprite-info-row">
-          <span class="sprite-info-label">Grid:</span>
-          <span class="sprite-info-value" id="info-grid">-</span>
-        </div>
-        <div class="sprite-info-row">
-          <span class="sprite-info-label">Size:</span>
-          <span class="sprite-info-value" id="info-size">-</span>
+        <div class="sprite-info-selected-row">
+          <canvas id="selected-canvas" class="selected-sprite-canvas-inline" width="32" height="32"></canvas>
+          <div class="sprite-info-selected-details">
+            <div class="selected-sprite-title-inline" id="selected-title">None</div>
+            <div class="sprite-info-meta">
+              <span id="info-pos">-</span> · <span id="info-size">-</span> · grid <span id="info-grid">-</span>
+            </div>
+          </div>
         </div>
       </div>
     </div>
-    </div>
-
-    <div class="section-title" data-section="selected-sprite">Selected Sprite</div>
-    <div class="section-content" data-section="selected-sprite">
-      <div class="selected-sprite-preview">
-        <div class="selected-sprite-title" id="selected-title">None</div>
-        <canvas id="selected-canvas" class="selected-sprite-canvas" width="64" height="64"></canvas>
-      </div>
     </div>
 
     <!-- Aseprite Config Section -->
@@ -1849,69 +1770,110 @@ export class SpriteConfigPanel implements vscode.WebviewViewProvider {
       </div>
     </div>
 
-    <!-- Character Preview Section (shown for character spritesheets) -->
-    <div id="character-section" style="display: none;">
-      <div class="section-title" data-section="character-preview">Character Preview</div>
-      <div class="section-content" data-section="character-preview">
-        <div class="character-preview">
-          <div class="character-preview-title">Live Preview</div>
-          <div class="character-canvas-container">
-            <canvas id="character-canvas" width="96" height="96"></canvas>
+    <!-- Animation Sets Section -->
+    <div id="animation-sets-wrapper" style="display: none;">
+      <div class="section-title" data-section="animation-sets">Animation Sets</div>
+      <div class="section-content" data-section="animation-sets">
+
+        <!-- Set selector -->
+        <div style="margin-bottom:8px;">
+          <div class="anim-set-controls">
+            <select id="anim-set-select"><option value="">-- select set --</option></select>
+            <button class="action-btn" style="flex:none;font-size:8px;" id="btn-new-anim-set">+</button>
+            <button class="action-btn" style="flex:none;font-size:8px;color:#e74c3c;" id="btn-delete-anim-set">x</button>
           </div>
-          <div class="character-controls">
-            <div class="control-row">
-              <span class="control-label">Direction:</span>
-              <div class="control-btns">
-                <button class="dir-btn" data-dir="left">←</button>
-                <button class="dir-btn" data-dir="up">↑</button>
-                <button class="dir-btn active" data-dir="down">↓</button>
-                <button class="dir-btn" data-dir="right">→</button>
-              </div>
-            </div>
-            <div class="control-row">
-              <span class="control-label">Action:</span>
-              <div class="control-btns" id="action-btns">
-                <!-- Dynamically populated based on characterConfig -->
-              </div>
-            </div>
-            <div class="control-row">
-              <span class="control-label">Frame:</span>
-              <div class="control-btns" id="frame-btns">
-                <!-- Dynamically populated based on framesPerAction -->
-              </div>
-            </div>
-            <div class="animation-toggle">
-              <div class="toggle-switch" id="animation-toggle"></div>
-              <span class="toggle-label">Animate frames</span>
+          <div style="font-size:8px;color:var(--pixel-muted);margin-bottom:4px;" id="anim-set-sheet-info"></div>
+        </div>
+
+        <!-- Animation list -->
+        <div class="anim-list-container" id="anim-set-list">
+          <div style="color:var(--pixel-muted);font-size:8px;text-align:center;padding:12px;">Select a set above</div>
+        </div>
+        <button class="action-btn" style="width:100%;font-size:8px;margin-bottom:8px;" id="btn-add-anim-clip">+ Add Animation</button>
+
+        <!-- Clip editor -->
+        <div id="anim-clip-editor" style="display:none;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+            <span style="font-size:9px;color:var(--pixel-accent);" id="clip-editor-title">Edit Animation</span>
+            <button class="action-btn" style="font-size:7px;padding:2px 6px;color:#e74c3c;" id="btn-delete-clip">Delete</button>
+          </div>
+
+          <div class="edit-row">
+            <span class="edit-label">Name:</span>
+            <input type="text" class="edit-input" id="clip-name-input">
+          </div>
+
+          <label style="display:flex;align-items:center;gap:6px;margin:6px 0;font-size:8px;cursor:pointer;">
+            <input type="checkbox" id="clip-is-alias" style="width:14px;height:14px;">
+            Alias (reuse another animation)
+          </label>
+
+          <!-- Alias section -->
+          <div id="clip-alias-section" style="display:none;">
+            <div class="edit-row">
+              <span class="edit-label">Target:</span>
+              <select class="edit-input" id="clip-alias-target" style="flex:1;"><option value="">-- select --</option></select>
             </div>
           </div>
-          <div class="character-sprite-name" id="character-sprite-name">-</div>
+
+          <!-- Frames section -->
+          <div id="clip-frames-section">
+            <label style="display:flex;align-items:center;gap:6px;margin:6px 0;font-size:8px;cursor:pointer;">
+              <input type="checkbox" id="clip-is-directional" style="width:14px;height:14px;">
+              Directional (per-direction frames)
+            </label>
+
+            <div class="dir-tabs" id="clip-dir-tabs" style="display:none;">
+              <button class="dir-tab active" data-dir="down">Down</button>
+              <button class="dir-tab" data-dir="up">Up</button>
+              <button class="dir-tab" data-dir="left">Left</button>
+              <button class="dir-tab" data-dir="right">Right</button>
+            </div>
+
+            <div style="margin-bottom:6px;">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px;">
+                <span style="font-size:8px;color:var(--pixel-muted);">FRAMES</span>
+                <button class="action-btn" style="font-size:7px;padding:2px 6px;" id="btn-pick-frames">Pick from grid</button>
+              </div>
+              <div class="frame-strip" id="clip-frame-strip">
+                <div class="frame-strip-empty">No frames. Click "Pick from grid" then click sprites above.</div>
+              </div>
+            </div>
+
+            <div style="margin-bottom:6px;">
+              <div style="display:flex;justify-content:space-between;font-size:8px;color:var(--pixel-muted);margin-bottom:2px;">
+                <span>FPS</span>
+                <span style="color:var(--pixel-accent);" id="clip-fps-val">10</span>
+              </div>
+              <input type="range" id="clip-fps" min="1" max="30" value="10" style="width:100%;">
+            </div>
+
+            <label style="display:flex;align-items:center;gap:6px;margin-bottom:6px;font-size:8px;cursor:pointer;">
+              <input type="checkbox" id="clip-loop" checked style="width:14px;height:14px;">
+              Loop
+            </label>
+          </div>
+
+          <div class="anim-preview-box" id="clip-preview-box" style="display:none;">
+            <canvas id="clip-preview-canvas" width="64" height="64"></canvas>
+          </div>
+
+          <div class="btn-row" style="margin-top:6px;">
+            <button class="action-btn primary" id="btn-save-clip">Save Animation</button>
+          </div>
+        </div>
+
+        <div class="btn-row" style="margin-top:8px;">
+          <button class="action-btn primary" style="width:100%;" id="btn-save-anim-set">Save All Changes</button>
         </div>
       </div>
     </div>
 
-    <!-- Action Editor Section (shown for character spritesheets) -->
-    <div id="action-editor-section" style="display: none;">
-      <div class="section-title" data-section="action-editor">Action Editor</div>
-      <div class="section-content" data-section="action-editor">
-        <div class="action-editor-section">
-          <div class="actions-list" id="actions-list">
-            <!-- Dynamically populated -->
-          </div>
-          <div class="add-action-row">
-            <input type="text" class="edit-input" id="new-action-name" placeholder="New action name">
-            <button class="action-btn" id="btn-add-action">+ Add</button>
-          </div>
-          <div class="btn-row">
-            <button class="action-btn primary" id="btn-save-actions">Save to Manifest</button>
-            <button class="action-btn" id="btn-reset-actions">Reset</button>
-          </div>
-        </div>
-      </div>
-    </div>
+    <div class="section-title" data-section="sprite-details">Sprite Details</div>
+    <div class="section-content" data-section="sprite-details">
+      <input type="text" class="sprite-filter-input" id="sprite-filter" placeholder="Filter sprites...">
+      <div class="sprite-list" id="sprite-list"></div>
 
-    <div class="section-title" data-section="edit-sprite">Edit Sprite</div>
-    <div class="section-content" data-section="edit-sprite">
       <div class="edit-section">
         <div class="mode-tabs">
           <button class="mode-tab active" id="tab-update">Update</button>
@@ -1919,7 +1881,7 @@ export class SpriteConfigPanel implements vscode.WebviewViewProvider {
         </div>
 
         <div id="edit-panel-update">
-          <div class="sprite-selected-info" id="editing-sprite-name">Select a sprite from the list below</div>
+          <div class="sprite-selected-info" id="editing-sprite-name">Select a sprite from the list above</div>
           <div class="edit-row">
             <span class="edit-label">X:</span>
             <input type="number" class="edit-input small" id="edit-x" value="0">
@@ -1965,9 +1927,50 @@ export class SpriteConfigPanel implements vscode.WebviewViewProvider {
       </div>
     </div>
 
-    <div class="section-title" data-section="sprites-in-sheet">Sprites in Sheet</div>
-    <div class="section-content" data-section="sprites-in-sheet">
-      <div class="sprite-list" id="sprite-list"></div>
+    <div class="section-title collapsed" data-section="lighting">Lighting (Game View)</div>
+    <div class="section-content collapsed" data-section="lighting" style="max-height:0;">
+      <div class="lighting-section">
+        <div class="lighting-row">
+          <span class="lighting-label">Enable Lighting</span>
+          <div class="toggle-switch active" id="lighting-enabled"></div>
+        </div>
+
+        <div class="lighting-row">
+          <span class="lighting-label">Day/Night Cycle</span>
+          <div class="toggle-switch active" id="lighting-daynight"></div>
+        </div>
+
+        <div class="lighting-row">
+          <span class="lighting-label">Agent Torch</span>
+          <div class="toggle-switch active" id="lighting-agent-torch"></div>
+        </div>
+
+        <div class="lighting-slider-row">
+          <div class="lighting-slider-label">
+            <span>Torch Radius</span>
+            <span class="lighting-slider-value" id="torch-radius-value">80</span>
+          </div>
+          <input type="range" id="torch-radius" min="20" max="200" value="80">
+        </div>
+
+        <div class="lighting-slider-row">
+          <div class="lighting-slider-label">
+            <span>Torch Intensity</span>
+            <span class="lighting-slider-value" id="torch-intensity-value">0.8</span>
+          </div>
+          <input type="range" id="torch-intensity" min="0" max="100" value="80">
+        </div>
+
+        <div class="color-picker-row">
+          <span class="lighting-label">Torch Color</span>
+          <input type="color" id="torch-color" value="#ffaa44">
+          <span class="color-hex" id="torch-color-hex">#ffaa44</span>
+        </div>
+
+        <div class="lighting-help">
+          Normal maps require spritesheets with _n.png suffix (e.g., tiles_n.png). Without normal maps, only point light falloff is visible.
+        </div>
+      </div>
     </div>
 
     <div class="header-buttons">
@@ -2045,18 +2048,17 @@ export class SpriteConfigPanel implements vscode.WebviewViewProvider {
     let gridH = 16;
     let selectedSprite = null;
 
-    // Character preview state
-    let charDirection = 'down';
-    let charAction = 'walk';
-    let charFrame = 0;
-    let charAnimating = false;
-    let charAnimationTimer = null;
-    let charActions = ['walk']; // Default, updated from characterConfig
-    let charFramesPerAction = 4; // Default, updated from characterConfig
-
-    // Action editor state
-    let editingActions = [];
-    let isEditingActions = false;
+    // Animation sets state
+    let animSets = {};
+    let currentAnimSetId = null;
+    let currentClipName = null;
+    let editingClipOriginalName = null;
+    let pickFrameMode = false;
+    let currentDirection = 'down';
+    let clipDirectionalFrames = {};
+    let clipFlatFrames = [];
+    let animPreviewTimer = null;
+    let animPreviewFrame = 0;
 
     // DOM
     const sheetList = document.getElementById('spritesheet-list');
@@ -2074,21 +2076,13 @@ export class SpriteConfigPanel implements vscode.WebviewViewProvider {
     const gridWInput = document.getElementById('grid-width');
     const gridHInput = document.getElementById('grid-height');
 
-    // Character preview DOM
-    const characterSection = document.getElementById('character-section');
-    const characterCanvas = document.getElementById('character-canvas');
-    const characterCtx = characterCanvas.getContext('2d');
-    const characterSpriteName = document.getElementById('character-sprite-name');
-    const animationToggle = document.getElementById('animation-toggle');
-
     ctx.imageSmoothingEnabled = false;
     selectedCtx.imageSmoothingEnabled = false;
-    characterCtx.imageSmoothingEnabled = false;
 
     // ─── Collapsible Sections ──────────────────────────────────────────────
 
     // Track collapsed state for each section
-    const collapsedSections = new Set();
+    const collapsedSections = new Set(['lighting']);
 
     // Helper to measure actual content height
     function measureContentHeight(content) {
@@ -2135,10 +2129,10 @@ export class SpriteConfigPanel implements vscode.WebviewViewProvider {
         }
       });
 
-      // Set initial max-height for animation
+      // Set initial max-height for animation (skip pre-collapsed sections)
       const sectionName = title.dataset.section;
       const content = document.querySelector(\`.section-content[data-section="\${sectionName}"]\`);
-      if (content) {
+      if (content && !collapsedSections.has(sectionName)) {
         content.style.maxHeight = measureContentHeight(content) + 'px';
       }
     });
@@ -2265,11 +2259,12 @@ export class SpriteConfigPanel implements vscode.WebviewViewProvider {
       // Clear worldmap highlight when switching sheets
       vscode.postMessage({ type: 'highlightSprite', data: { spriteId: null } });
 
-      // Show/hide character preview section
-      updateCharacterSection();
-
       // Show/hide Aseprite config section
       updateAsepriteSection();
+
+      // Update animation sets section (auto-link, exit pick mode on sheet switch)
+      exitPickMode();
+      updateAnimationSetsSection();
     }
 
     // ─── Aseprite Config Section ───────────────────────────────────────────
@@ -2332,135 +2327,7 @@ export class SpriteConfigPanel implements vscode.WebviewViewProvider {
       }
     }
 
-    // ─── Character Preview ───────────────────────────────────────────────
-
-    function isCharacterSheet(sheetName) {
-      const sheet = spritesheets[sheetName];
-      return sheet && sheet.isCharacter === true;
-    }
-
-    function updateCharacterSection() {
-      const actionEditorSection = document.getElementById('action-editor-section');
-
-      if (isCharacterSheet(currentSheet)) {
-        const sheet = spritesheets[currentSheet];
-        const config = sheet.characterConfig || {};
-
-        // Handle both old (string[]) and new (ActionConfig[]) format
-        const rawActions = config.actions || ['walk'];
-        const isNewFormat = rawActions.length > 0 && typeof rawActions[0] === 'object';
-
-        // Extract action names for preview
-        charActions = isNewFormat
-          ? rawActions.map(a => a.name)
-          : rawActions;
-        charFramesPerAction = config.framesPerAction || 4;
-        charAction = charActions[0] || 'walk';
-        charFrame = 0;
-
-        // Initialize action editor state
-        if (isNewFormat) {
-          editingActions = JSON.parse(JSON.stringify(rawActions));
-        } else {
-          // Migrate to new format for editing
-          editingActions = rawActions.map(name => ({
-            name,
-            frames: charFramesPerAction,
-            skill: undefined,
-            customSkillName: undefined
-          }));
-        }
-        isEditingActions = false;
-
-        // Populate action buttons
-        const actionBtns = document.getElementById('action-btns');
-        actionBtns.innerHTML = '';
-        charActions.forEach((action, i) => {
-          const btn = document.createElement('button');
-          btn.className = 'action-btn-char' + (i === 0 ? ' active' : '');
-          btn.dataset.action = action;
-          btn.textContent = action.charAt(0).toUpperCase() + action.slice(1);
-          btn.onclick = () => {
-            stopCharacterAnimation();
-            document.querySelectorAll('.action-btn-char').forEach(b => b.classList.remove('active'));
-            btn.classList.add('active');
-            charAction = action;
-            charFrame = 0;
-            updateFrameButtons();
-            renderCharacterPreview();
-          };
-          actionBtns.appendChild(btn);
-        });
-
-        // Populate frame buttons
-        updateFrameButtons();
-
-        characterSection.style.display = 'block';
-        actionEditorSection.style.display = 'block';
-        renderActionsEditor();
-        renderCharacterPreview();
-      } else {
-        characterSection.style.display = 'none';
-        actionEditorSection.style.display = 'none';
-        stopCharacterAnimation();
-      }
-    }
-
-    // ─── Aseprite Config Section ───────────────────────────────────────────
-
-    function updateAsepriteSection() {
-      const asepriteSection = document.getElementById('aseprite-section');
-      const asepriteStatusValue = document.getElementById('aseprite-status-value');
-      const asepriteJsonPath = document.getElementById('aseprite-json-path');
-      const asepriteJsonValue = document.getElementById('aseprite-json-value');
-      const asepriteTagsSection = document.getElementById('aseprite-tags-section');
-      const asepriteTagsList = document.getElementById('aseprite-tags-list');
-      const unlinkBtn = document.getElementById('unlink-aseprite');
-      const linkBtn = document.getElementById('browse-aseprite');
-
-      if (!currentSheet) {
-        asepriteSection.style.display = 'none';
-        return;
-      }
-
-      const sheet = spritesheets[currentSheet];
-      asepriteSection.style.display = 'block';
-
-      if (sheet.asepriteData) {
-        // Aseprite is linked
-        asepriteStatusValue.textContent = 'Linked';
-        asepriteStatusValue.classList.add('linked');
-
-        // Show JSON path
-        asepriteJsonPath.style.display = 'flex';
-        asepriteJsonValue.textContent = sheet.asepriteData.meta?.image || 'Unknown';
-
-        // Show tags
-        asepriteTagsSection.style.display = 'block';
-        const tags = sheet.asepriteData.meta?.frameTags || [];
-        asepriteTagsList.innerHTML = tags.map(tag =>
-          \`<span class="aseprite-tag" title="\${tag.direction}">\${tag.name}</span>\`
-        ).join('');
-
-        // Show unlink button, update link button text
-        unlinkBtn.style.display = 'inline-block';
-        linkBtn.textContent = 'Change JSON File';
-      } else {
-        // No Aseprite linked
-        asepriteStatusValue.textContent = 'Not configured';
-        asepriteStatusValue.classList.remove('linked');
-
-        // Hide JSON path
-        asepriteJsonPath.style.display = 'none';
-
-        // Hide tags
-        asepriteTagsSection.style.display = 'none';
-
-        // Hide unlink button, update link button text
-        unlinkBtn.style.display = 'none';
-        linkBtn.textContent = 'Link JSON File';
-      }
-    }
+    // ─── Aseprite Buttons ──────────────────────────────────────────────
 
     // Browse Aseprite JSON button
     document.getElementById('browse-aseprite').onclick = () => {
@@ -2481,7 +2348,6 @@ export class SpriteConfigPanel implements vscode.WebviewViewProvider {
     window.addEventListener('message', (event) => {
       const message = event.data;
       if (message.type === 'selectedAsepriteJsonPath' || message.type === 'selectedAsepriteJson') {
-        // Update the Aseprite config for current sheet
         vscode.postMessage({
           type: 'updateAsepriteConfig',
           data: {
@@ -2491,272 +2357,6 @@ export class SpriteConfigPanel implements vscode.WebviewViewProvider {
         });
       }
     });
-
-    function updateFrameButtons() {
-      const frameBtns = document.getElementById('frame-btns');
-      frameBtns.innerHTML = '';
-
-      // Get frame count for current action from editingActions
-      const currentActionConfig = editingActions.find(a => a.name === charAction);
-      const frameCount = currentActionConfig?.frames || charFramesPerAction || 6;
-
-      for (let i = 0; i < frameCount; i++) {
-        const btn = document.createElement('button');
-        btn.className = 'action-btn-char' + (i === charFrame ? ' active' : '');
-        btn.dataset.frame = i;
-        btn.textContent = i;
-        btn.onclick = () => {
-          stopCharacterAnimation();
-          document.querySelectorAll('#frame-btns .action-btn-char').forEach(b => b.classList.remove('active'));
-          btn.classList.add('active');
-          charFrame = i;
-          renderCharacterPreview();
-        };
-        frameBtns.appendChild(btn);
-      }
-    }
-
-    // ─── Action Editor ───────────────────────────────────────────────────
-
-    const SKILL_OPTIONS = [
-      { value: '', label: '-- None --' },
-      { value: 'read', label: 'Read' },
-      { value: 'write', label: 'Write' },
-      { value: 'edit', label: 'Edit' },
-      { value: 'bash', label: 'Bash' },
-      { value: 'grep', label: 'Grep' },
-      { value: 'glob', label: 'Glob' },
-      { value: 'search', label: 'Search' },
-      { value: 'webSearch', label: 'Web Search' },
-      { value: 'webFetch', label: 'Web Fetch' },
-      { value: 'agent', label: 'Agent' },
-      { value: 'custom', label: 'Custom...' }
-    ];
-
-    function renderActionsEditor() {
-      const listEl = document.getElementById('actions-list');
-      listEl.innerHTML = '';
-
-      editingActions.forEach((action, index) => {
-        const item = createActionItem(action, index);
-        listEl.appendChild(item);
-      });
-
-      // Update section height after content changes
-      updateSectionHeight('action-editor');
-    }
-
-    function createActionItem(action, index) {
-      const div = document.createElement('div');
-      div.className = 'action-item';
-      div.dataset.actionIndex = index;
-
-      const skillOptionsHtml = SKILL_OPTIONS.map(opt =>
-        \`<option value="\${opt.value}" \${action.skill === opt.value ? 'selected' : ''}>\${opt.label}</option>\`
-      ).join('');
-
-      div.innerHTML = \`
-        <div class="action-header">
-          <span class="action-name-display">\${action.name}</span>
-          <button class="btn-icon delete-action" title="Remove">X</button>
-        </div>
-        <div class="action-config-row">
-          <label class="config-label">Frames:</label>
-          <input type="number" class="edit-input small frames-input"
-                 value="\${action.frames}" min="1" max="12" style="width: 50px;">
-        </div>
-        <div class="action-config-row">
-          <label class="config-label">Skill:</label>
-          <select class="skill-select">\${skillOptionsHtml}</select>
-          <input type="text" class="edit-input custom-skill-input"
-                 value="\${action.customSkillName || ''}"
-                 placeholder="Custom name"
-                 style="display: \${action.skill === 'custom' ? 'block' : 'none'}; max-width: 80px;">
-        </div>
-      \`;
-
-      // Delete button handler
-      div.querySelector('.delete-action').onclick = () => {
-        editingActions.splice(index, 1);
-        isEditingActions = true;
-        renderActionsEditor();
-      };
-
-      // Frames input handler
-      div.querySelector('.frames-input').onchange = (e) => {
-        editingActions[index].frames = parseInt(e.target.value) || 6;
-        isEditingActions = true;
-        // Update frame buttons if this is the current action
-        if (action.name === charAction) {
-          updateFrameButtons();
-        }
-      };
-
-      // Skill select handler
-      div.querySelector('.skill-select').onchange = (e) => {
-        editingActions[index].skill = e.target.value || undefined;
-        const customInput = div.querySelector('.custom-skill-input');
-        customInput.style.display = e.target.value === 'custom' ? 'block' : 'none';
-        isEditingActions = true;
-      };
-
-      // Custom skill input handler
-      div.querySelector('.custom-skill-input').onchange = (e) => {
-        editingActions[index].customSkillName = e.target.value;
-        isEditingActions = true;
-      };
-
-      return div;
-    }
-
-    // Add action button
-    document.getElementById('btn-add-action').onclick = () => {
-      const nameInput = document.getElementById('new-action-name');
-      const name = nameInput.value.trim();
-
-      if (!name) {
-        nameInput.style.borderColor = 'var(--pixel-error, #f44)';
-        setTimeout(() => nameInput.style.borderColor = '', 500);
-        return;
-      }
-
-      if (editingActions.some(a => a.name === name)) {
-        nameInput.style.borderColor = 'var(--pixel-error, #f44)';
-        setTimeout(() => nameInput.style.borderColor = '', 500);
-        return;
-      }
-
-      editingActions.push({
-        name,
-        frames: 6,
-        skill: undefined,
-        customSkillName: undefined
-      });
-
-      nameInput.value = '';
-      isEditingActions = true;
-      renderActionsEditor();
-    };
-
-    // Save button
-    document.getElementById('btn-save-actions').onclick = () => {
-      const sheet = spritesheets[currentSheet];
-      const config = sheet.characterConfig || {};
-
-      const newConfig = {
-        directions: config.directions || ['down', 'up', 'left', 'right'],
-        actions: editingActions
-      };
-
-      vscode.postMessage({
-        type: 'updateCharacterConfig',
-        data: {
-          sheetName: currentSheet,
-          characterConfig: newConfig
-        }
-      });
-
-      isEditingActions = false;
-    };
-
-    // Reset button
-    document.getElementById('btn-reset-actions').onclick = () => {
-      const sheet = spritesheets[currentSheet];
-      const config = sheet.characterConfig || {};
-      const rawActions = config.actions || ['walk'];
-      const isNewFormat = rawActions.length > 0 && typeof rawActions[0] === 'object';
-
-      if (isNewFormat) {
-        editingActions = JSON.parse(JSON.stringify(rawActions));
-      } else {
-        editingActions = rawActions.map(name => ({
-          name,
-          frames: config.framesPerAction || 6,
-          skill: undefined,
-          customSkillName: undefined
-        }));
-      }
-      isEditingActions = false;
-      renderActionsEditor();
-    };
-
-    function renderCharacterPreview() {
-      if (!currentSheet || !isCharacterSheet(currentSheet)) return;
-
-      const sheet = spritesheets[currentSheet];
-      const spriteName = 'char-' + charAction + '-' + charDirection + '-' + charFrame;
-      const sprite = sheet.sprites[spriteName];
-
-      if (!sprite) {
-        characterSpriteName.textContent = 'Sprite not found: ' + spriteName;
-        return;
-      }
-
-      characterSpriteName.textContent = spriteName;
-
-      const img = new Image();
-      img.src = sheet.imageUrl;
-
-      img.onload = () => {
-        characterCtx.clearRect(0, 0, 96, 96);
-        // Draw scaled up (48x48 -> 96x96)
-        characterCtx.drawImage(img, sprite.x, sprite.y, sprite.w, sprite.h, 0, 0, 96, 96);
-      };
-
-      if (img.complete) {
-        characterCtx.clearRect(0, 0, 96, 96);
-        characterCtx.drawImage(img, sprite.x, sprite.y, sprite.w, sprite.h, 0, 0, 96, 96);
-      }
-    }
-
-    function startCharacterAnimation() {
-      if (charAnimationTimer) return;
-      charAnimating = true;
-      animationToggle.classList.add('active');
-
-      charAnimationTimer = setInterval(() => {
-        // Get frame count for current action
-        const currentActionConfig = editingActions.find(a => a.name === charAction);
-        const frameCount = currentActionConfig?.frames || charFramesPerAction || 6;
-
-        charFrame = (charFrame + 1) % frameCount;
-
-        // Update frame button UI
-        document.querySelectorAll('#frame-btns .action-btn-char').forEach(btn => {
-          btn.classList.toggle('active', parseInt(btn.dataset.frame) === charFrame);
-        });
-
-        renderCharacterPreview();
-      }, 150); // Frame change every 150ms (approx 6-7 fps for walk)
-    }
-
-    function stopCharacterAnimation() {
-      charAnimating = false;
-      animationToggle.classList.remove('active');
-      if (charAnimationTimer) {
-        clearInterval(charAnimationTimer);
-        charAnimationTimer = null;
-      }
-    }
-
-    // Direction button handlers
-    document.querySelectorAll('.dir-btn').forEach(btn => {
-      btn.onclick = () => {
-        document.querySelectorAll('.dir-btn').forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
-        charDirection = btn.dataset.dir;
-        renderCharacterPreview();
-      };
-    });
-
-    // Animation toggle handler
-    animationToggle.onclick = () => {
-      if (charAnimating) {
-        stopCharacterAnimation();
-      } else {
-        startCharacterAnimation();
-      }
-    };
 
     // ─── Sprite Viewer ──────────────────────────────────────────────────
 
@@ -2827,6 +2427,15 @@ export class SpriteConfigPanel implements vscode.WebviewViewProvider {
       const snapX = gridX * gridW;
       const snapY = gridY * gridH;
 
+      // Pick frame mode: add sprite to current animation clip
+      if (pickFrameMode && currentSheet) {
+        const spriteName = findSpriteAtGrid(snapX, snapY);
+        if (spriteName) {
+          addFrameToCurrentClip(spriteName);
+        }
+        return;
+      }
+
       infoPos.textContent = \`\${x}, \${y}\`;
       infoGrid.textContent = \`\${gridX}, \${gridY}\`;
       infoSize.textContent = \`\${gridW}×\${gridH}\`;
@@ -2851,17 +2460,22 @@ export class SpriteConfigPanel implements vscode.WebviewViewProvider {
       const snapX = Math.floor(x / gridW) * gridW;
       const snapY = Math.floor(y / gridH) * gridH;
 
-      selectedCtx.clearRect(0, 0, 64, 64);
+      selectedCtx.clearRect(0, 0, 32, 32);
 
       img.onload = () => {
-        selectedCtx.drawImage(img, snapX, snapY, gridW, gridH, 0, 0, 64, 64);
+        selectedCtx.drawImage(img, snapX, snapY, gridW, gridH, 0, 0, 32, 32);
       };
       img.src = sheet.imageUrl;
       if (img.complete) {
-        selectedCtx.drawImage(img, snapX, snapY, gridW, gridH, 0, 0, 64, 64);
+        selectedCtx.drawImage(img, snapX, snapY, gridW, gridH, 0, 0, 32, 32);
       }
 
-      selectedTitle.textContent = \`\${currentSheet}: (\${snapX}, \${snapY})\`;
+      // Find named sprite at this position
+      let spriteName = null;
+      for (const [name, sp] of Object.entries(sheet.sprites || {})) {
+        if (sp.x === snapX && sp.y === snapY) { spriteName = name; break; }
+      }
+      selectedTitle.textContent = spriteName || \`(\${snapX}, \${snapY})\`;
       selectedSprite = { x: snapX, y: snapY, w: gridW, h: gridH };
     }
 
@@ -2908,8 +2522,8 @@ export class SpriteConfigPanel implements vscode.WebviewViewProvider {
             selectedTitle.textContent = name;
 
             // Draw to selected canvas using cached image
-            selectedCtx.clearRect(0, 0, 64, 64);
-            selectedCtx.drawImage(img, sprite.x, sprite.y, sprite.w, sprite.h, 0, 0, 64, 64);
+            selectedCtx.clearRect(0, 0, 32, 32);
+            selectedCtx.drawImage(img, sprite.x, sprite.y, sprite.w, sprite.h, 0, 0, 32, 32);
 
             infoPos.textContent = \`\${sprite.x}, \${sprite.y}\`;
             infoSize.textContent = \`\${sprite.w}×\${sprite.h}\`;
@@ -2937,22 +2551,37 @@ export class SpriteConfigPanel implements vscode.WebviewViewProvider {
       const cachedImg = imageCache.get(sheet.imageUrl);
       if (cachedImg && cachedImg.complete) {
         drawThumbnails(cachedImg);
-        updateSectionHeight('sprites-in-sheet');
+        updateSectionHeight('sprite-details');
       } else {
         // Load the image
         const img = new Image();
         img.onload = () => {
           imageCache.set(sheet.imageUrl, img);
           drawThumbnails(img);
-          updateSectionHeight('sprites-in-sheet');
+          updateSectionHeight('sprite-details');
         };
         img.src = sheet.imageUrl;
         if (img.complete) {
           imageCache.set(sheet.imageUrl, img);
           drawThumbnails(img);
-          updateSectionHeight('sprites-in-sheet');
+          updateSectionHeight('sprite-details');
         }
       }
+    }
+
+    // ─── Sprite Filter ─────────────────────────────────────────────────────
+
+    const spriteFilter = document.getElementById('sprite-filter');
+    if (spriteFilter) {
+      spriteFilter.addEventListener('input', () => {
+        const query = spriteFilter.value.toLowerCase();
+        const items = spriteList.querySelectorAll('.sprite-item');
+        items.forEach(item => {
+          const name = item.querySelector('.sprite-name');
+          if (!name) return;
+          item.style.display = name.textContent.toLowerCase().includes(query) ? '' : 'none';
+        });
+      });
     }
 
     // ─── Zoom Controls ────────────────────────────────────────────────────
@@ -3266,6 +2895,632 @@ export class SpriteConfigPanel implements vscode.WebviewViewProvider {
       });
     }
 
+    // ─── Animation Sets ──────────────────────────────────────────────────
+
+    const animSetSelect = document.getElementById('anim-set-select');
+    const animSetList = document.getElementById('anim-set-list');
+    const animClipEditor = document.getElementById('anim-clip-editor');
+    const animSetWrapper = document.getElementById('animation-sets-wrapper');
+    const animSetSheetInfo = document.getElementById('anim-set-sheet-info');
+    const pickToolbar = document.getElementById('pick-mode-toolbar');
+    const pickToolbarStrip = document.getElementById('pick-toolbar-strip');
+    const pickFrameCount = document.getElementById('pick-frame-count');
+    const clipNameInput = document.getElementById('clip-name-input');
+    const clipIsAlias = document.getElementById('clip-is-alias');
+    const clipAliasSection = document.getElementById('clip-alias-section');
+    const clipAliasTarget = document.getElementById('clip-alias-target');
+    const clipFramesSection = document.getElementById('clip-frames-section');
+    const clipIsDirectional = document.getElementById('clip-is-directional');
+    const clipDirTabs = document.getElementById('clip-dir-tabs');
+    const clipFrameStrip = document.getElementById('clip-frame-strip');
+    const clipFpsSlider = document.getElementById('clip-fps');
+    const clipFpsVal = document.getElementById('clip-fps-val');
+    const clipLoop = document.getElementById('clip-loop');
+    const clipPreviewBox = document.getElementById('clip-preview-box');
+    const clipPreviewCanvas = document.getElementById('clip-preview-canvas');
+    const clipPreviewCtx = clipPreviewCanvas ? clipPreviewCanvas.getContext('2d') : null;
+    if (clipPreviewCtx) clipPreviewCtx.imageSmoothingEnabled = false;
+
+    /** Find the named sprite at a grid position */
+    function findSpriteAtGrid(snapX, snapY) {
+      if (!currentSheet) return null;
+      const sheet = spritesheets[currentSheet];
+      if (!sheet || !sheet.sprites) return null;
+      for (const [name, sp] of Object.entries(sheet.sprites)) {
+        if (sp.x === snapX && sp.y === snapY) return name;
+      }
+      return null;
+    }
+
+    /** Add a frame to the current clip's frame list */
+    function addFrameToCurrentClip(spriteName) {
+      if (!currentClipName) return;
+      if (clipIsDirectional.checked) {
+        if (!clipDirectionalFrames[currentDirection]) {
+          clipDirectionalFrames[currentDirection] = [];
+        }
+        clipDirectionalFrames[currentDirection].push(spriteName);
+      } else {
+        clipFlatFrames.push(spriteName);
+      }
+      renderFrameStrip();
+      updateAnimPreview();
+      updateSectionHeight('animation-sets');
+
+      // Also add thumbnail to sticky toolbar strip during pick mode
+      if (pickFrameMode && pickToolbarStrip && currentSheet) {
+        const sheet = spritesheets[currentSheet];
+        const sprite = sheet && sheet.sprites[spriteName];
+        if (sprite) {
+          const wrapper = document.createElement('div');
+          wrapper.className = 'pick-toolbar-frame';
+          const c = document.createElement('canvas');
+          c.width = 24; c.height = 24;
+          const fCtx = c.getContext('2d');
+          fCtx.imageSmoothingEnabled = false;
+          const cachedImg = imageCache.get(sheet.imageUrl);
+          if (cachedImg && cachedImg.complete) {
+            fCtx.drawImage(cachedImg, sprite.x, sprite.y, sprite.w, sprite.h, 0, 0, 24, 24);
+          } else {
+            const img = new Image();
+            img.onload = () => {
+              imageCache.set(sheet.imageUrl, img);
+              fCtx.drawImage(img, sprite.x, sprite.y, sprite.w, sprite.h, 0, 0, 24, 24);
+            };
+            img.src = sheet.imageUrl;
+          }
+          wrapper.appendChild(c);
+          pickToolbarStrip.appendChild(wrapper);
+        }
+        updatePickFrameCount();
+      }
+    }
+
+    /** Update pick toolbar frame count */
+    function updatePickFrameCount() {
+      if (!pickFrameCount) return;
+      const frames = clipIsDirectional.checked
+        ? (clipDirectionalFrames[currentDirection] || [])
+        : clipFlatFrames;
+      pickFrameCount.textContent = frames.length + ' frame' + (frames.length !== 1 ? 's' : '');
+    }
+
+    /** Populate the set selector dropdown */
+    function renderAnimSetSelect() {
+      animSetSelect.innerHTML = '<option value="">-- select set --</option>';
+      for (const id of Object.keys(animSets)) {
+        const opt = document.createElement('option');
+        opt.value = id;
+        opt.textContent = id;
+        if (id === currentAnimSetId) opt.selected = true;
+        animSetSelect.appendChild(opt);
+      }
+    }
+
+    /** Render animation list for selected set */
+    function renderAnimClipList() {
+      if (!currentAnimSetId || !animSets[currentAnimSetId]) {
+        animSetList.innerHTML = '<div style="color:var(--pixel-muted);font-size:8px;text-align:center;padding:12px;">Select a set above</div>';
+        animClipEditor.style.display = 'none';
+        return;
+      }
+      const set = animSets[currentAnimSetId];
+      animSetSheetInfo.textContent = 'Sheet: ' + (set.spritesheet || '—');
+      const anims = set.animations || {};
+      animSetList.innerHTML = '';
+      for (const [name, clip] of Object.entries(anims)) {
+        const item = document.createElement('div');
+        item.className = 'anim-item' + (name === currentClipName ? ' selected' : '');
+
+        const left = document.createElement('span');
+        left.textContent = name;
+        item.appendChild(left);
+
+        const right = document.createElement('span');
+        if (clip.alias) {
+          right.className = 'anim-alias-badge';
+          right.textContent = '→ ' + clip.alias;
+        } else {
+          right.className = 'anim-meta-info';
+          const frameCount = clip.directions
+            ? Object.values(clip.directions).reduce((sum, d) => sum + (d.frames ? d.frames.length : 0), 0)
+            : (clip.frames ? clip.frames.length : 0);
+          right.textContent = frameCount + 'f @' + (clip.fps || 10) + 'fps';
+        }
+        item.appendChild(right);
+
+        item.addEventListener('click', () => loadClipEditor(name));
+        animSetList.appendChild(item);
+      }
+      updateSectionHeight('animation-sets');
+    }
+
+    /** Load clip data into editor */
+    function loadClipEditor(name) {
+      if (!currentAnimSetId || !animSets[currentAnimSetId]) return;
+      const set = animSets[currentAnimSetId];
+      const clip = set.animations[name];
+      if (!clip) return;
+
+      currentClipName = name;
+      editingClipOriginalName = name;
+      animClipEditor.style.display = 'block';
+      document.getElementById('clip-editor-title').textContent = 'Edit: ' + name;
+      clipNameInput.value = name;
+
+      // Alias
+      if (clip.alias) {
+        clipIsAlias.checked = true;
+        clipAliasSection.style.display = 'block';
+        clipFramesSection.style.display = 'none';
+        populateClipAliasTargets();
+        clipAliasTarget.value = clip.alias;
+      } else {
+        clipIsAlias.checked = false;
+        clipAliasSection.style.display = 'none';
+        clipFramesSection.style.display = 'block';
+      }
+
+      // Directional
+      if (clip.directions) {
+        clipIsDirectional.checked = true;
+        clipDirTabs.style.display = 'flex';
+        clipDirectionalFrames = {};
+        for (const [dir, d] of Object.entries(clip.directions)) {
+          clipDirectionalFrames[dir] = [...(d.frames || [])];
+        }
+        clipFlatFrames = [];
+      } else {
+        clipIsDirectional.checked = false;
+        clipDirTabs.style.display = 'none';
+        clipDirectionalFrames = {};
+        clipFlatFrames = clip.frames ? [...clip.frames] : [];
+      }
+
+      // FPS + loop
+      clipFpsSlider.value = clip.fps || 10;
+      clipFpsVal.textContent = clip.fps || 10;
+      clipLoop.checked = clip.loop !== false;
+
+      currentDirection = 'down';
+      updateDirTabActive();
+      renderFrameStrip();
+      updateAnimPreview();
+      renderAnimClipList();
+      updateSectionHeight('animation-sets');
+    }
+
+    /** Update direction tab active state */
+    function updateDirTabActive() {
+      document.querySelectorAll('#clip-dir-tabs .dir-tab').forEach(tab => {
+        tab.classList.toggle('active', tab.dataset.dir === currentDirection);
+      });
+    }
+
+    /** Render frame strip thumbnails */
+    function renderFrameStrip() {
+      if (!currentSheet) return;
+      const sheet = spritesheets[currentSheet];
+      if (!sheet) return;
+
+      const frames = clipIsDirectional.checked
+        ? (clipDirectionalFrames[currentDirection] || [])
+        : clipFlatFrames;
+
+      clipFrameStrip.innerHTML = '';
+
+      if (frames.length === 0) {
+        clipFrameStrip.innerHTML = '<div class="frame-strip-empty">No frames. Click "Pick from grid" then click sprites above.</div>';
+        return;
+      }
+
+      const drawFrame = (img, frameName, index) => {
+        const sprite = sheet.sprites[frameName];
+        if (!sprite) return;
+
+        const item = document.createElement('div');
+        item.className = 'frame-strip-item';
+
+        const c = document.createElement('canvas');
+        c.width = 28;
+        c.height = 28;
+        const fCtx = c.getContext('2d');
+        fCtx.imageSmoothingEnabled = false;
+        fCtx.drawImage(img, sprite.x, sprite.y, sprite.w, sprite.h, 0, 0, 28, 28);
+
+        const idx = document.createElement('div');
+        idx.className = 'frame-index';
+        idx.textContent = index;
+
+        const removeBtn = document.createElement('button');
+        removeBtn.className = 'frame-remove';
+        removeBtn.textContent = '×';
+        removeBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          if (clipIsDirectional.checked) {
+            const arr = clipDirectionalFrames[currentDirection];
+            if (arr) arr.splice(index, 1);
+          } else {
+            clipFlatFrames.splice(index, 1);
+          }
+          renderFrameStrip();
+          updateAnimPreview();
+          updateSectionHeight('animation-sets');
+        });
+
+        item.appendChild(c);
+        item.appendChild(idx);
+        item.appendChild(removeBtn);
+        clipFrameStrip.appendChild(item);
+      };
+
+      const cachedImg = imageCache.get(sheet.imageUrl);
+      if (cachedImg && cachedImg.complete) {
+        frames.forEach((f, i) => drawFrame(cachedImg, f, i));
+      } else {
+        const img = new Image();
+        img.onload = () => {
+          imageCache.set(sheet.imageUrl, img);
+          frames.forEach((f, i) => drawFrame(img, f, i));
+        };
+        img.src = sheet.imageUrl;
+      }
+    }
+
+    /** Update animation preview */
+    function updateAnimPreview() {
+      if (animPreviewTimer) {
+        clearInterval(animPreviewTimer);
+        animPreviewTimer = null;
+      }
+      animPreviewFrame = 0;
+
+      if (!currentSheet || !clipPreviewCtx) return;
+      const sheet = spritesheets[currentSheet];
+      if (!sheet) return;
+
+      const frames = clipIsDirectional.checked
+        ? (clipDirectionalFrames[currentDirection] || [])
+        : clipFlatFrames;
+
+      if (frames.length === 0) {
+        clipPreviewBox.style.display = 'none';
+        return;
+      }
+      clipPreviewBox.style.display = 'flex';
+
+      const fps = parseInt(clipFpsSlider.value) || 10;
+      const loop = clipLoop.checked;
+
+      const drawPreviewFrame = (img) => {
+        const frameName = frames[animPreviewFrame];
+        const sprite = sheet.sprites[frameName];
+        clipPreviewCtx.clearRect(0, 0, 64, 64);
+        if (sprite) {
+          clipPreviewCtx.drawImage(img, sprite.x, sprite.y, sprite.w, sprite.h, 0, 0, 64, 64);
+        }
+      };
+
+      const startPreview = (img) => {
+        drawPreviewFrame(img);
+        if (frames.length > 1) {
+          animPreviewTimer = setInterval(() => {
+            animPreviewFrame++;
+            if (animPreviewFrame >= frames.length) {
+              if (loop) {
+                animPreviewFrame = 0;
+              } else {
+                animPreviewFrame = frames.length - 1;
+                clearInterval(animPreviewTimer);
+                animPreviewTimer = null;
+                return;
+              }
+            }
+            drawPreviewFrame(img);
+          }, 1000 / fps);
+        }
+      };
+
+      const cachedImg = imageCache.get(sheet.imageUrl);
+      if (cachedImg && cachedImg.complete) {
+        startPreview(cachedImg);
+      } else {
+        const img = new Image();
+        img.onload = () => {
+          imageCache.set(sheet.imageUrl, img);
+          startPreview(img);
+        };
+        img.src = sheet.imageUrl;
+      }
+    }
+
+    /** Populate alias target dropdown */
+    function populateClipAliasTargets() {
+      if (!currentAnimSetId || !animSets[currentAnimSetId]) return;
+      const anims = animSets[currentAnimSetId].animations || {};
+      clipAliasTarget.innerHTML = '<option value="">-- select --</option>';
+      for (const name of Object.keys(anims)) {
+        if (name === currentClipName) continue;
+        const opt = document.createElement('option');
+        opt.value = name;
+        opt.textContent = name;
+        clipAliasTarget.appendChild(opt);
+      }
+    }
+
+    /** Show/hide animation sets section, auto-link spritesheet */
+    function updateAnimationSetsSection() {
+      if (!animSetWrapper) return;
+      // Always show if we have animation sets data
+      if (Object.keys(animSets).length === 0) {
+        animSetWrapper.style.display = 'none';
+        return;
+      }
+      animSetWrapper.style.display = 'block';
+
+      // Auto-select set matching current spritesheet
+      if (currentSheet) {
+        for (const [id, set] of Object.entries(animSets)) {
+          if (set.spritesheet === currentSheet) {
+            if (currentAnimSetId !== id) {
+              currentAnimSetId = id;
+              currentClipName = null;
+              animClipEditor.style.display = 'none';
+              renderAnimSetSelect();
+              renderAnimClipList();
+            }
+            return;
+          }
+        }
+      }
+      // No matching set — keep current or clear
+      renderAnimSetSelect();
+      renderAnimClipList();
+      updateSectionHeight('animation-sets');
+    }
+
+    /** Enter pick-frame mode */
+    function enterPickMode() {
+      pickFrameMode = true;
+      document.body.classList.add('pick-mode-active');
+      if (pickToolbar) pickToolbar.classList.add('active');
+      if (pickToolbarStrip) pickToolbarStrip.innerHTML = '';
+      const pickBtn = document.getElementById('btn-pick-frames');
+      if (pickBtn) pickBtn.textContent = 'Picking...';
+      updatePickFrameCount();
+      updateSectionHeight('animation-sets');
+
+      // Ensure Sprite Viewer is expanded so user has something to click
+      if (collapsedSections.has('sprite-viewer')) {
+        const title = document.querySelector('.section-title[data-section="sprite-viewer"]');
+        const content = document.querySelector('.section-content[data-section="sprite-viewer"]');
+        if (title && content) {
+          const height = measureContentHeight(content);
+          title.classList.remove('collapsed');
+          content.classList.remove('collapsed');
+          content.style.maxHeight = height + 'px';
+          collapsedSections.delete('sprite-viewer');
+        }
+      }
+    }
+
+    /** Exit pick-frame mode */
+    function exitPickMode() {
+      pickFrameMode = false;
+      document.body.classList.remove('pick-mode-active');
+      if (pickToolbar) pickToolbar.classList.remove('active');
+      if (pickToolbarStrip) pickToolbarStrip.innerHTML = '';
+      const pickBtn = document.getElementById('btn-pick-frames');
+      if (pickBtn) pickBtn.textContent = 'Pick from grid';
+      updateSectionHeight('animation-sets');
+    }
+
+    /** Save the current clip back to the animation set */
+    function saveCurrentClip() {
+      if (!currentAnimSetId || !currentClipName) return;
+      const set = animSets[currentAnimSetId];
+      if (!set) return;
+
+      const newName = clipNameInput.value.trim();
+      if (!newName) return;
+
+      // Build clip definition
+      let clipDef = {};
+      if (clipIsAlias.checked) {
+        const target = clipAliasTarget.value;
+        if (target) clipDef.alias = target;
+      } else {
+        if (clipIsDirectional.checked) {
+          clipDef.directions = {};
+          for (const dir of ['down', 'up', 'left', 'right']) {
+            clipDef.directions[dir] = { frames: clipDirectionalFrames[dir] || [] };
+          }
+        } else {
+          clipDef.frames = [...clipFlatFrames];
+        }
+        clipDef.fps = parseInt(clipFpsSlider.value) || 10;
+        clipDef.loop = clipLoop.checked;
+      }
+
+      // Handle rename
+      if (editingClipOriginalName && editingClipOriginalName !== newName) {
+        delete set.animations[editingClipOriginalName];
+      }
+      set.animations[newName] = clipDef;
+
+      currentClipName = newName;
+      editingClipOriginalName = newName;
+      renderAnimClipList();
+      updateSectionHeight('animation-sets');
+    }
+
+    // ─── Animation Sets Event Handlers ──────────────────────────────────
+
+    // Set selector change
+    animSetSelect.addEventListener('change', () => {
+      const id = animSetSelect.value;
+      if (!id) {
+        currentAnimSetId = null;
+        currentClipName = null;
+        animClipEditor.style.display = 'none';
+        renderAnimClipList();
+        return;
+      }
+      currentAnimSetId = id;
+      currentClipName = null;
+      animClipEditor.style.display = 'none';
+
+      // Auto-switch to referenced spritesheet
+      const set = animSets[id];
+      if (set && set.spritesheet && spritesheets[set.spritesheet]) {
+        if (currentSheet !== set.spritesheet) {
+          selectSpritesheet(set.spritesheet);
+        }
+      }
+      renderAnimClipList();
+    });
+
+    // New set button
+    document.getElementById('btn-new-anim-set').addEventListener('click', () => {
+      const id = prompt('Animation set ID (e.g., chicken, main-agent):');
+      if (!id || !id.trim()) return;
+      const setId = id.trim().toLowerCase().replace(/[^a-z0-9-]/g, '-');
+      vscode.postMessage({
+        type: 'createAnimationSet',
+        data: { id: setId, spritesheet: currentSheet || '' }
+      });
+    });
+
+    // Delete set button
+    document.getElementById('btn-delete-anim-set').addEventListener('click', () => {
+      if (!currentAnimSetId) return;
+      if (!confirm('Delete animation set "' + currentAnimSetId + '"?')) return;
+      vscode.postMessage({
+        type: 'deleteAnimationSet',
+        data: { id: currentAnimSetId }
+      });
+      currentAnimSetId = null;
+      currentClipName = null;
+      animClipEditor.style.display = 'none';
+    });
+
+    // Add clip button
+    document.getElementById('btn-add-anim-clip').addEventListener('click', () => {
+      if (!currentAnimSetId || !animSets[currentAnimSetId]) return;
+      const name = prompt('Animation name (e.g., idle, walk, attack):');
+      if (!name || !name.trim()) return;
+      const clipName = name.trim().toLowerCase().replace(/[^a-z0-9-]/g, '-');
+      const set = animSets[currentAnimSetId];
+      if (set.animations[clipName]) {
+        alert('Animation "' + clipName + '" already exists.');
+        return;
+      }
+      set.animations[clipName] = { frames: [], fps: 10, loop: true };
+      renderAnimClipList();
+      loadClipEditor(clipName);
+    });
+
+    // Delete clip button
+    document.getElementById('btn-delete-clip').addEventListener('click', () => {
+      if (!currentAnimSetId || !currentClipName) return;
+      const set = animSets[currentAnimSetId];
+      if (!set) return;
+      if (!confirm('Delete animation "' + currentClipName + '"?')) return;
+      delete set.animations[currentClipName];
+      currentClipName = null;
+      animClipEditor.style.display = 'none';
+      exitPickMode();
+      renderAnimClipList();
+    });
+
+    // Pick mode toggle
+    document.getElementById('btn-pick-frames').addEventListener('click', () => {
+      if (pickFrameMode) {
+        exitPickMode();
+      } else {
+        enterPickMode();
+      }
+    });
+
+    // Done button in sticky toolbar
+    document.getElementById('btn-pick-done').addEventListener('click', () => {
+      exitPickMode();
+    });
+
+    // Alias checkbox toggle
+    clipIsAlias.addEventListener('change', () => {
+      if (clipIsAlias.checked) {
+        clipAliasSection.style.display = 'block';
+        clipFramesSection.style.display = 'none';
+        populateClipAliasTargets();
+        exitPickMode();
+      } else {
+        clipAliasSection.style.display = 'none';
+        clipFramesSection.style.display = 'block';
+      }
+      updateSectionHeight('animation-sets');
+    });
+
+    // Directional checkbox toggle
+    clipIsDirectional.addEventListener('change', () => {
+      if (clipIsDirectional.checked) {
+        clipDirTabs.style.display = 'flex';
+        // Copy flat frames to current direction if transitioning
+        if (clipFlatFrames.length > 0 && (!clipDirectionalFrames[currentDirection] || clipDirectionalFrames[currentDirection].length === 0)) {
+          clipDirectionalFrames[currentDirection] = [...clipFlatFrames];
+        }
+      } else {
+        clipDirTabs.style.display = 'none';
+        // Copy current direction frames to flat if transitioning
+        if (clipDirectionalFrames[currentDirection] && clipDirectionalFrames[currentDirection].length > 0 && clipFlatFrames.length === 0) {
+          clipFlatFrames = [...clipDirectionalFrames[currentDirection]];
+        }
+      }
+      renderFrameStrip();
+      updateAnimPreview();
+      updateSectionHeight('animation-sets');
+    });
+
+    // Direction tabs
+    document.querySelectorAll('#clip-dir-tabs .dir-tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        currentDirection = tab.dataset.dir;
+        updateDirTabActive();
+        renderFrameStrip();
+        updateAnimPreview();
+      });
+    });
+
+    // FPS slider
+    clipFpsSlider.addEventListener('input', () => {
+      clipFpsVal.textContent = clipFpsSlider.value;
+      updateAnimPreview();
+    });
+
+    // Loop checkbox
+    clipLoop.addEventListener('change', () => {
+      updateAnimPreview();
+    });
+
+    // Save clip button
+    document.getElementById('btn-save-clip').addEventListener('click', () => {
+      saveCurrentClip();
+    });
+
+    // Save all changes button
+    document.getElementById('btn-save-anim-set').addEventListener('click', () => {
+      if (!currentAnimSetId || !animSets[currentAnimSetId]) return;
+      // Save current clip first if editing
+      if (currentClipName) saveCurrentClip();
+      vscode.postMessage({
+        type: 'saveAnimationSet',
+        data: { id: currentAnimSetId, set: animSets[currentAnimSetId] }
+      });
+    });
+
+    // Request animation sets on load
+    vscode.postMessage({ type: 'loadAnimationSets' });
+
     // ─── Message Handling ─────────────────────────────────────────────────
 
     window.addEventListener('message', async event => {
@@ -3288,6 +3543,12 @@ export class SpriteConfigPanel implements vscode.WebviewViewProvider {
             selectSpritesheet(firstSheet);
           }
         }
+      }
+
+      if (message.type === 'loadAnimationSets' && message.sets) {
+        animSets = message.sets;
+        renderAnimSetSelect();
+        updateAnimationSetsSection();
       }
     });
 

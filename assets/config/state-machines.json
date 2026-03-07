@@ -1,0 +1,149 @@
+{
+  "version": 1,
+  "machines": {
+    "main-agent": {
+      "id": "main-agent",
+      "description": "Primary Claude agent — tool animations + wander behavior",
+      "initialState": "idle",
+      "states": [
+        { "id": "idle", "animation": "idle", "duration": 5000 },
+        { "id": "walking", "animation": "walk" },
+        { "id": "wander-walking", "animation": "walk" },
+        { "id": "wander-paused", "animation": "idle", "duration": 2500, "metadata": { "pauseMin": 1500, "pauseMax": 4000 } },
+        { "id": "investigating", "animation": "investigate" },
+        { "id": "writing", "animation": "write" },
+        { "id": "bashing", "animation": "bash" },
+        { "id": "thinking", "animation": "think" },
+        { "id": "waiting", "animation": "idle" },
+        { "id": "error", "animation": "error", "duration": 3000 },
+        { "id": "success", "animation": "success", "duration": 2000 }
+      ],
+      "transitions": [
+        { "from": "*", "to": "walking", "trigger": { "type": "event", "event": "move_to_file" }, "priority": 10 },
+        { "from": "*", "to": "investigating", "trigger": { "type": "event", "event": "tool:Read" }, "priority": 5 },
+        { "from": "*", "to": "investigating", "trigger": { "type": "event", "event": "tool:Glob" }, "priority": 5 },
+        { "from": "*", "to": "investigating", "trigger": { "type": "event", "event": "tool:Grep" }, "priority": 5 },
+        { "from": "*", "to": "writing", "trigger": { "type": "event", "event": "tool:Write" }, "priority": 5 },
+        { "from": "*", "to": "writing", "trigger": { "type": "event", "event": "tool:Edit" }, "priority": 5 },
+        { "from": "*", "to": "writing", "trigger": { "type": "event", "event": "tool:NotebookEdit" }, "priority": 5 },
+        { "from": "*", "to": "bashing", "trigger": { "type": "event", "event": "tool:Bash" }, "priority": 5 },
+        { "from": "*", "to": "thinking", "trigger": { "type": "event", "event": "thinking" }, "priority": 5 },
+        { "from": "*", "to": "waiting", "trigger": { "type": "event", "event": "permission_request" }, "priority": 5 },
+        { "from": "*", "to": "error", "trigger": { "type": "event", "event": "tool_error" }, "priority": 4 },
+        { "from": "*", "to": "success", "trigger": { "type": "event", "event": "tool_success" }, "priority": 3 },
+        { "from": "walking", "to": "idle", "trigger": { "type": "event", "event": "movement_complete" } },
+        { "from": "wander-walking", "to": "wander-paused", "trigger": { "type": "event", "event": "movement_complete" } },
+        { "from": "wander-paused", "to": "wander-walking", "trigger": { "type": "timer" } },
+        { "from": "idle", "to": "wander-walking", "trigger": { "type": "timer" } },
+        { "from": "error", "to": "idle", "trigger": { "type": "timer" } },
+        { "from": "success", "to": "idle", "trigger": { "type": "timer" } }
+      ]
+    },
+    "chicken": {
+      "id": "chicken",
+      "description": "Fast erratic wanderer",
+      "initialState": "paused",
+      "states": [
+        { "id": "paused", "animation": "idle", "duration": 1750, "metadata": { "pauseMin": 1000, "pauseMax": 2500 } },
+        { "id": "wandering", "animation": "walk", "metadata": { "speed": 1.2, "wanderRadius": 6, "directionChangeChance": 0.3 } }
+      ],
+      "transitions": [
+        { "from": "paused", "to": "wandering", "trigger": { "type": "timer" } },
+        { "from": "wandering", "to": "paused", "trigger": { "type": "event", "event": "movement_complete" } }
+      ]
+    },
+    "cow": {
+      "id": "cow",
+      "description": "Slow grazer, prefers grass",
+      "initialState": "paused",
+      "states": [
+        { "id": "paused", "animation": "idle", "duration": 4500, "metadata": { "pauseMin": 3000, "pauseMax": 6000 } },
+        { "id": "wandering", "animation": "walk", "metadata": { "speed": 0.6, "wanderRadius": 4, "directionChangeChance": 0.1, "preferredTiles": ["grass"] } }
+      ],
+      "transitions": [
+        { "from": "paused", "to": "wandering", "trigger": { "type": "timer" } },
+        { "from": "wandering", "to": "paused", "trigger": { "type": "event", "event": "movement_complete" } }
+      ]
+    },
+    "pig": {
+      "id": "pig",
+      "description": "Moderate forager, prefers tilled soil",
+      "initialState": "paused",
+      "states": [
+        { "id": "paused", "animation": "idle", "duration": 3000, "metadata": { "pauseMin": 2000, "pauseMax": 4000 } },
+        { "id": "wandering", "animation": "walk", "metadata": { "speed": 0.9, "wanderRadius": 5, "directionChangeChance": 0.2, "preferredTiles": ["tilled", "dirt"] } }
+      ],
+      "transitions": [
+        { "from": "paused", "to": "wandering", "trigger": { "type": "timer" } },
+        { "from": "wandering", "to": "paused", "trigger": { "type": "event", "event": "movement_complete" } }
+      ]
+    },
+    "duck": {
+      "id": "duck",
+      "description": "Water-loving swimmer",
+      "initialState": "paused",
+      "states": [
+        { "id": "paused", "animation": "idle", "duration": 2500, "metadata": { "pauseMin": 1500, "pauseMax": 3500 } },
+        { "id": "wandering", "animation": "walk", "metadata": { "speed": 0.8, "wanderRadius": 5, "directionChangeChance": 0.15, "preferredTiles": ["water"] } }
+      ],
+      "transitions": [
+        { "from": "paused", "to": "wandering", "trigger": { "type": "timer" } },
+        { "from": "wandering", "to": "paused", "trigger": { "type": "event", "event": "movement_complete" } }
+      ]
+    }
+  },
+  "agentTypes": {
+    "bug-analyzer": {
+      "displayName": "Bug Analyzer",
+      "sprite": "chicken",
+      "stateMachine": "chicken",
+      "tint": "#ff4444",
+      "nameLabel": true,
+      "preferredTiles": ["tilled", "dirt"]
+    },
+    "code-reviewer": {
+      "displayName": "Code Reviewer",
+      "sprite": "cow",
+      "stateMachine": "cow",
+      "tint": "#4488ff",
+      "nameLabel": true,
+      "preferredTiles": ["grass"]
+    },
+    "ui-sketcher": {
+      "displayName": "UI Sketcher",
+      "sprite": "duck",
+      "stateMachine": "duck",
+      "tint": "#ff88ff",
+      "nameLabel": true,
+      "preferredTiles": ["water"]
+    },
+    "Explore": {
+      "displayName": "Explorer",
+      "sprite": "chicken",
+      "stateMachine": "chicken",
+      "tint": "#00e436",
+      "nameLabel": true
+    },
+    "Plan": {
+      "displayName": "Planner",
+      "sprite": "cow",
+      "stateMachine": "cow",
+      "tint": "#ffec27",
+      "nameLabel": true
+    },
+    "general-purpose": {
+      "displayName": "Agent",
+      "sprite": "pig",
+      "stateMachine": "pig",
+      "tint": "#ff77a8",
+      "nameLabel": true
+    },
+    "_default": {
+      "displayName": "Agent",
+      "sprite": "chicken",
+      "stateMachine": "chicken",
+      "tint": null,
+      "nameLabel": true
+    }
+  }
+}
