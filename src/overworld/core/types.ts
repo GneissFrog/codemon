@@ -67,18 +67,12 @@ export interface AnimationSetsConfig {
   sets: Record<string, AnimationSetDef>;
 }
 
-export interface CropDef {
-  growthStages: string[];
-  growthRate: 'activity' | 'tokens' | 'time';
-}
-
 export interface SpriteManifest {
   version: number;
   description: string;
   tileSize: number;
   spritesheets: Record<string, SpritesheetDef>;
   animations: Record<string, AnimationDef>;
-  crops: Record<string, CropDef>;
 }
 
 // ─── Runtime Types ─────────────────────────────────────────────────────────
@@ -414,6 +408,26 @@ export interface AutotilerConfig {
   version: number;
   terrains: TerrainConfig[];
   transitions: TerrainTransition[];
+}
+
+// ─── Crop Config Types ──────────────────────────────────────────────────────
+
+/** Runtime config for crop/plot generation — loaded from crop-config.json */
+export interface CropConfig {
+  extensionMap: Record<string, string>;
+  defaultCropType: string;
+  spritesheet: string;
+  cropTypes: Record<string, { growthStages: string[] }>;
+  growth: { maxStage: number; writeWeight: number; formula: string };
+  fences: {
+    horizontal: string;
+    vertical: string;
+    cornerTL: string;
+    cornerTR: string;
+    cornerBL: string;
+    cornerBR: string;
+    gate: string;
+  };
 }
 
 // ─── Config Types ──────────────────────────────────────────────────────────

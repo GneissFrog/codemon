@@ -2134,40 +2134,5 @@
       "fps": 8,
       "loop": true
     }
-  },
-  "crops": {
-    "wheat": {
-      "growthStages": [
-        "wheat-1",
-        "wheat-2",
-        "wheat-3",
-        "wheat-4"
-      ],
-      "growthRate": "activity"
-    },
-    "pumpkin": {
-      "growthStages": [
-        "seedling-1",
-        "seedling-2",
-        "pumpkin-1",
-        "pumpkin-2"
-      ],
-      "growthRate": "activity"
-    },
-    "flower": {
-      "growthStages": [
-        "seedling-1",
-        "seedling-2",
-        "flower"
-      ],
-      "growthRate": "activity"
-    },
-    "default": {
-      "growthStages": [
-        "seedling-1",
-        "seedling-2"
-      ],
-      "growthRate": "activity"
-    }
   }
 }

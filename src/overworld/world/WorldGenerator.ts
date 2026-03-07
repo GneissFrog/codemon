@@ -11,7 +11,7 @@
  */
 
 import { WorldMap } from './WorldMap';
-import { TileType, Plot, PlacedModuleInfo, AutotilerConfig } from '../core/types';
+import { TileType, Plot, PlacedModuleInfo, AutotilerConfig, CropConfig } from '../core/types';
 import { FileNode, MapLayout, MapTile } from '../../core/codebase-mapper';
 import { ModuleRegistry } from '../modules/ModuleRegistry';
 import { placeModules, PlacerContext } from '../modules/ModulePlacer';
@@ -176,63 +176,57 @@ class UnionFind {
 export class WorldGenerator {
   private map: WorldMap;
   private config: GeneratorConfig;
-  private fileExtensionToCrop: Map<string, string>;
+  private cropConfig: CropConfig;
   private moduleRegistry: ModuleRegistry | null;
   private placedModules: PlacedModuleInfo[] = [];
   private autotiler: Autotiler;
   private seed: number;
   private subIslandSeeds: Array<{ cx: number; cy: number; radius: number }> | null = null;
 
+  private static readonly DEFAULT_CROP_CONFIG: CropConfig = {
+    extensionMap: {
+      '.ts': 'wheat', '.tsx': 'wheat', '.js': 'wheat', '.jsx': 'wheat',
+      '.mjs': 'wheat', '.cjs': 'wheat',
+      '.py': 'pumpkin',
+      '.rs': 'flower', '.go': 'pumpkin',
+      '.css': 'flower', '.scss': 'flower', '.less': 'flower',
+      '.json': 'seedling', '.yaml': 'seedling', '.yml': 'seedling', '.toml': 'seedling',
+      '.md': 'flower', '.txt': 'seedling',
+      '.sh': 'seedling', '.bash': 'seedling',
+    },
+    defaultCropType: 'seedling',
+    spritesheet: 'plants',
+    cropTypes: {
+      wheat: { growthStages: ['wheat-1', 'wheat-2', 'wheat-3', 'wheat-4'] },
+      pumpkin: { growthStages: ['seedling-1', 'seedling-2', 'pumpkin-1', 'pumpkin-2'] },
+      flower: { growthStages: ['seedling-1', 'seedling-2', 'flower'] },
+      seedling: { growthStages: ['seedling-1', 'seedling-2'] },
+    },
+    growth: { maxStage: 3, writeWeight: 3, formula: 'sqrt' },
+    fences: {
+      horizontal: 'fences/fence-horizontal',
+      vertical: 'fences/fence-vertical',
+      cornerTL: 'fences/fence-corner-tl',
+      cornerTR: 'fences/fence-corner-tr',
+      cornerBL: 'fences/fence-corner-bl',
+      cornerBR: 'fences/fence-corner-br',
+      gate: 'fences/fence-gate',
+    },
+  };
+
   constructor(
     map: WorldMap,
     config: Partial<GeneratorConfig> = {},
     moduleRegistry?: ModuleRegistry,
-    autotilerConfig?: AutotilerConfig
+    autotilerConfig?: AutotilerConfig,
+    cropConfig?: CropConfig
   ) {
     this.map = map;
     this.config = { ...DEFAULT_CONFIG, ...config };
     this.moduleRegistry = moduleRegistry ?? null;
     this.autotiler = new Autotiler(autotilerConfig ?? { version: 3, terrains: [], transitions: [] });
+    this.cropConfig = cropConfig ?? WorldGenerator.DEFAULT_CROP_CONFIG;
     this.seed = Date.now();
-
-    // Map file extensions to crop types
-    this.fileExtensionToCrop = new Map([
-      // TypeScript/JavaScript → Wheat
-      ['.ts', 'wheat'],
-      ['.tsx', 'wheat'],
-      ['.js', 'wheat'],
-      ['.jsx', 'wheat'],
-      ['.mjs', 'wheat'],
-      ['.cjs', 'wheat'],
-
-      // Python → Pumpkin
-      ['.py', 'pumpkin'],
-
-      // Rust → Carrot (using flower for now)
-      ['.rs', 'flower'],
-
-      // Go → Corn (using pumpkin)
-      ['.go', 'pumpkin'],
-
-      // CSS/Styling → Flower
-      ['.css', 'flower'],
-      ['.scss', 'flower'],
-      ['.less', 'flower'],
-
-      // Config → Herb (using seedling)
-      ['.json', 'seedling'],
-      ['.yaml', 'seedling'],
-      ['.yml', 'seedling'],
-      ['.toml', 'seedling'],
-
-      // Docs → Sunflower (using flower)
-      ['.md', 'flower'],
-      ['.txt', 'seedling'],
-
-      // Shell → Weed (using seedling)
-      ['.sh', 'seedling'],
-      ['.bash', 'seedling'],
-    ]);
   }
 
   /**
@@ -813,9 +807,8 @@ export class WorldGenerator {
     const readCount = tile.node?.readCount || 0;
     const writeCount = tile.node?.writeCount || 0;
     const activity = readCount + writeCount;
-    // Writes count 3× more — actively-edited files grow faster
-    const weightedActivity = readCount + writeCount * 3;
-    const growthStage = Math.min(3, Math.floor(Math.sqrt(weightedActivity)));
+    const weightedActivity = readCount + writeCount * this.cropConfig.growth.writeWeight;
+    const growthStage = Math.min(this.cropConfig.growth.maxStage, Math.floor(Math.sqrt(weightedActivity)));
 
     // Create plot record with pre-computed crop sprite
     const plot: Plot = {
@@ -872,23 +865,25 @@ export class WorldGenerator {
       this.map.setTile(x, y, 'fence', spriteId, 0, LAYER_TERRAIN);
     };
 
+    const f = this.cropConfig.fences;
+
     // Top and bottom fences
     for (let x = 0; x < width; x++) {
-      placeFence(startX + x, startY - 1, 'fences/fence-horizontal');
-      placeFence(startX + x, startY + height, 'fences/fence-horizontal');
+      placeFence(startX + x, startY - 1, f.horizontal);
+      placeFence(startX + x, startY + height, f.horizontal);
     }
 
     // Left and right fences (excluding corners)
     for (let y = 0; y < height; y++) {
-      placeFence(startX - 1, startY + y, 'fences/fence-vertical');
-      placeFence(startX + width, startY + y, 'fences/fence-vertical');
+      placeFence(startX - 1, startY + y, f.vertical);
+      placeFence(startX + width, startY + y, f.vertical);
     }
 
     // Corner posts
-    placeFence(startX - 1, startY - 1, 'fences/fence-corner-tl');
-    placeFence(startX + width, startY - 1, 'fences/fence-corner-tr');
-    placeFence(startX - 1, startY + height, 'fences/fence-corner-bl');
-    placeFence(startX + width, startY + height, 'fences/fence-corner-br');
+    placeFence(startX - 1, startY - 1, f.cornerTL);
+    placeFence(startX + width, startY - 1, f.cornerTR);
+    placeFence(startX - 1, startY + height, f.cornerBL);
+    placeFence(startX + width, startY + height, f.cornerBR);
   }
 
   // ─── Crop Helpers ─────────────────────────────────────────────────────────
@@ -898,7 +893,7 @@ export class WorldGenerator {
    */
   private getCropType(filename: string): string {
     const ext = this.getFileExtension(filename);
-    return this.fileExtensionToCrop.get(ext) || 'seedling';
+    return this.cropConfig.extensionMap[ext] || this.cropConfig.defaultCropType;
   }
 
   /**
@@ -913,20 +908,11 @@ export class WorldGenerator {
    * Get crop sprite for a plot
    */
   getCropSprite(plot: Plot): string {
-    const stage = plot.growthStage;
-
-    switch (plot.cropType) {
-      case 'wheat':
-        return `plants/wheat-${Math.min(4, stage + 1)}`;
-      case 'pumpkin':
-        return stage < 2 ? `plants/seedling-${stage + 1}` : `plants/pumpkin-${stage - 1}`;
-      case 'flower':
-        return stage < 2 ? `plants/seedling-${stage + 1}` : 'plants/flower';
-      case 'carrot':
-        return stage < 2 ? `plants/seedling-${stage + 1}` : 'plants/flower';
-      default:
-        return `plants/seedling-${Math.min(2, stage + 1)}`;
-    }
+    const cropDef = this.cropConfig.cropTypes[plot.cropType]
+      || this.cropConfig.cropTypes[this.cropConfig.defaultCropType];
+    const stages = cropDef?.growthStages || ['seedling-1'];
+    const idx = Math.min(plot.growthStage, stages.length - 1);
+    return `${this.cropConfig.spritesheet}/${stages[idx]}`;
   }
 
   // ─── Water Generation ─────────────────────────────────────────────────────
@@ -1262,7 +1248,7 @@ export class WorldGenerator {
       if (hasAdjacentPath) {
         // Don't replace corner fences (they look wrong as gates)
         if (tile.spriteId.includes('corner')) continue;
-        this.map.setTile(x, y, 'fence-gate', 'fences/fence-gate', 0, LAYER_TERRAIN);
+        this.map.setTile(x, y, 'fence-gate', this.cropConfig.fences.gate, 0, LAYER_TERRAIN);
       }
     }
   }

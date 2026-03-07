@@ -27,7 +27,7 @@ import { WorldMap } from './overworld/world/WorldMap';
 import { WorldGenerator } from './overworld/world/WorldGenerator';
 import { getModuleRegistry } from './overworld/modules/ModuleRegistry';
 import { getContextFarmEngine, ContextFarmEngine } from './context-farm';
-import { AutotilerConfig } from './overworld/core/types';
+import { AutotilerConfig, CropConfig } from './overworld/core/types';
 import { StateMachine, getStateMachineRegistry } from './state-machine';
 import { getAnimationRegistry } from './animation';
 
@@ -39,6 +39,7 @@ let worldMap: WorldMap | undefined;
 let worldGenerator: WorldGenerator | undefined;
 let contextFarmEngine: ContextFarmEngine | undefined;
 let autotilerConfig: AutotilerConfig | undefined;
+let cropConfig: CropConfig | undefined;
 let mainAgentSM: StateMachine | undefined;
 
 export function activate(context: vscode.ExtensionContext): void {
@@ -70,22 +71,40 @@ export function activate(context: vscode.ExtensionContext): void {
     }
   };
 
+  const loadCropConfig = async (): Promise<void> => {
+    try {
+      const configPath = vscode.Uri.joinPath(extensionUri, 'assets', 'config', 'crop-config.json');
+      const content = await vscode.workspace.fs.readFile(configPath);
+      cropConfig = JSON.parse(Buffer.from(content).toString('utf-8'));
+      console.log('[CodeMon] Crop config loaded successfully');
+    } catch (e) {
+      console.warn('[CodeMon] Failed to load crop-config.json:', e);
+    }
+  };
+
   Promise.all([
     assetLoader.load(),
     moduleRegistry.load(),
     loadAutotilerConfig(),
+    loadCropConfig(),
     stateMachineRegistry.load(),
     animationRegistry.load(),
   ]).then(() => {
-    console.log('[CodeMon] Assets, modules, terrain config, state machines, and animation sets loaded successfully');
+    console.log('[CodeMon] Assets, modules, terrain config, crop config, state machines, and animation sets loaded successfully');
 
     // Create the main agent state machine
     mainAgentSM = stateMachineRegistry.createMachine('main-agent');
     if (mainAgentSM) {
+      // Tool-action states (investigating, writing, bashing, thinking) are handled
+      // by moveAndAct for proper walk-then-act sequencing. Only forward non-tool
+      // transitions (idle, error, success) through setAgentAnimation.
+      const toolActionStates = new Set(['investigating', 'writing', 'bashing', 'thinking']);
       mainAgentSM.onTransition((event) => {
-        const animation = event.to.animation;
-        if (animation) {
-          gameViewPanel?.setAgentAnimation(animation);
+        if (!toolActionStates.has(event.to.id)) {
+          const animation = event.to.animation;
+          if (animation) {
+            gameViewPanel?.setAgentAnimation(animation);
+          }
         }
       });
     }
@@ -304,10 +323,9 @@ function setupEventRouting(
   const budgetStatusBar = getBudgetStatusBar();
   const codebaseMapper = getCodebaseMapper();
 
-  // Route activity entries to game view
+  // Route activity entries to game view (animation handled by TOOL_USE handler)
   eventRouter.on(ROUTER_EVENTS.ACTIVITY_ENTRY, (entry: ActivityEntry) => {
     gameViewPanel?.addActivityEntry(entry);
-    gameViewPanel?.setAgentAnimation(entry.animation);
   });
 
   // Route usage updates to budget tracker and status bar
@@ -339,12 +357,13 @@ function setupEventRouting(
 
   // Route tool use events to trigger animations AND update map
   eventRouter.on(ROUTER_EVENTS.TOOL_USE, (event: ToolUseEvent) => {
-    // Drive animation via state machine (falls back to old behavior if SM not loaded)
+    // Determine animation for this tool
+    const animation = getAnimationForTool(event.toolName);
+    const duration = getActionDuration(animation);
+
+    // Drive state machine for state tracking (transitions guarded in onTransition)
     if (mainAgentSM) {
       mainAgentSM.send(`tool:${event.toolName}`);
-    } else {
-      const animation = getAnimationForTool(event.toolName);
-      gameViewPanel?.setAgentAnimation(animation);
     }
 
     // Track observed tool and update config
@@ -362,8 +381,11 @@ function setupEventRouting(
       codebaseMapper.recordActivity(filePath, action);
       sendMapUpdate();
 
-      // Move agent to the file
-      gameViewPanel?.moveAgentToFile(filePath);
+      // Move agent to file, then play action animation on arrival
+      gameViewPanel?.moveAgentToFileWithAction(filePath, animation, duration);
+    } else if (animation !== 'idle') {
+      // No file path — play animation in place (e.g., bash without explicit file)
+      gameViewPanel?.setAgentAnimation(animation);
     }
   });
 
@@ -404,7 +426,7 @@ function sendMapUpdate(): void {
   }
   if (!worldGenerator) {
     const moduleRegistry = getModuleRegistry();
-    worldGenerator = new WorldGenerator(worldMap, {}, moduleRegistry, autotilerConfig);
+    worldGenerator = new WorldGenerator(worldMap, {}, moduleRegistry, autotilerConfig, cropConfig);
   }
 
   worldGenerator.generateFromLayout(layout);
@@ -520,6 +542,20 @@ function getAnimationForTool(toolName: string): string {
     default:
       return 'idle';
   }
+}
+
+/** Duration in ms for action animations (derived from animation-sets.json frame counts @ 10fps) */
+const ACTION_DURATIONS: Record<string, number> = {
+  investigate: 800,  // 8 frames @ 10fps
+  write: 1000,       // 10 frames @ 10fps
+  bash: 600,         // 6 frames @ 10fps
+  success: 600,      // 6 frames @ 10fps
+  think: 800,        // 8 frames @ 10fps
+  idle: 0,
+};
+
+function getActionDuration(action: string): number {
+  return ACTION_DURATIONS[action] || 800;
 }
 
 /**
