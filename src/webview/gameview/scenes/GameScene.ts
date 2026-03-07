@@ -46,7 +46,6 @@ export class GameScene extends Phaser.Scene {
   private agentSheetName = 'claude-actions'; // Default, can be overridden
   private agentActions: string[] = [];
   private agentDirections: string[] = [];
-  private agentFramesPerAction: Map<string, number> = new Map(); // action -> frame count
 
   // Aseprite-based animation config
   private asepriteData: AsepriteExportData | null = null;
@@ -218,29 +217,6 @@ export class GameScene extends Phaser.Scene {
   // ─── Agent Animation System ──────────────────────────────────────────────
 
   /**
-   * Set the agent animation configuration from manifest
-   */
-  setAgentConfig(
-    sheetName: string,
-    directions: string[],
-    actions: { name: string; frames: number }[]
-  ): void {
-    this.agentSheetName = sheetName;
-    this.agentDirections = directions;
-    this.agentActions = actions.map(a => a.name);
-    this.agentFramesPerAction.clear();
-    for (const action of actions) {
-      this.agentFramesPerAction.set(action.name, action.frames);
-    }
-
-    // Reset animation state so animations get recreated with new config
-    this.agentAnimationsCreated = false;
-    this.currentAgentAnimation = '';
-
-    console.log(`[GameScene] Agent config set: ${sheetName}, ${actions.length} actions, ${directions.length} directions`);
-  }
-
-  /**
    * Set Aseprite-based animation configuration
    * When set, animations will be created from Aseprite tag data
    */
@@ -282,7 +258,8 @@ export class GameScene extends Phaser.Scene {
   }
 
   /**
-   * Create agent animations from the spritesheet using loaded config
+   * Create agent animations (Aseprite fallback path).
+   * Primary path is setAnimationSets() which handles AnimationSet-based creation.
    */
   createAgentAnimations(): void {
     if (this.agentAnimationsCreated) return;
@@ -293,73 +270,14 @@ export class GameScene extends Phaser.Scene {
       return;
     }
 
-    // If using Aseprite animations, check if they were already created by PhaserRenderer
+    // Use Aseprite animations if configured
     if (this.useAsepriteAnimations && this.asepriteData) {
       this.createAgentFromAseprite();
       return;
     }
 
-    // Must have config set first
-    if (this.agentActions.length === 0 || this.agentDirections.length === 0) {
-      console.warn('[GameScene] Agent config not set, using defaults');
-      // Use defaults if config not set
-      this.agentActions = ['idle', 'walk', 'hoe', 'water', 'plant', 'harvest'];
-      this.agentDirections = ['down', 'up', 'left', 'right'];
-      for (const action of this.agentActions) {
-        this.agentFramesPerAction.set(action, 6);
-      }
-    }
-
-    // Create animations for each action/direction combination
-    for (const action of this.agentActions) {
-      const frameCount = this.agentFramesPerAction.get(action) || 6;
-
-      for (const direction of this.agentDirections) {
-        const animKey = `agent_${action}_${direction}`;
-
-        // Skip if animation already exists
-        if (this.anims.exists(animKey)) continue;
-
-        const frames: { key: string; frame: string }[] = [];
-
-        for (let i = 0; i < frameCount; i++) {
-          const frameName = `char-${action}-${direction}-${i}`;
-          frames.push({ key: this.agentSheetName, frame: frameName });
-        }
-
-        // Only create if we have valid frames
-        if (frames.length > 0) {
-          this.anims.create({
-            key: animKey,
-            frames: frames,
-            frameRate: 10,
-            repeat: -1,
-          });
-        }
-      }
-    }
-
-    // Create the agent sprite with a default frame
-    const defaultFrame = `char-${this.agentActions[0] || 'idle'}-${this.agentDirections[0] || 'down'}-0`;
-    this.agentSprite = this.add.sprite(0, 0, this.agentSheetName, defaultFrame);
-    this.agentSprite.setOrigin(0.5, 0.75); // Center-bottom origin for better positioning
-    this.agentSprite.setDepth(10); // Above other characters
-
-    // Enable Light2D pipeline with normal map if available and lighting is enabled
-    if (this.lightsEnabled && this.textures.exists(`${this.agentSheetName}_normal`)) {
-      try {
-        this.agentSprite.setPipeline('Light2D');
-        this.agentSprite.normalMap = this.textures.get(`${this.agentSheetName}_normal`);
-        console.log(`[GameScene] Agent sprite using Light2D pipeline with normal map`);
-      } catch (e) {
-        console.warn(`[GameScene] Failed to set Light2D pipeline on agent: ${e}`);
-      }
-    }
-
-    this.charactersLayer.add(this.agentSprite);
-
-    this.agentAnimationsCreated = true;
-    console.log(`[GameScene] Agent animations created for ${this.agentSheetName}`);
+    // No config available — agent animations will be created when setAnimationSets() is called
+    console.warn('[GameScene] No animation config available, waiting for animation sets');
   }
 
   /**
@@ -456,7 +374,7 @@ export class GameScene extends Phaser.Scene {
 
   /**
    * Set animation sets and create Phaser animations from them.
-   * This creates animations using the resolver for alias resolution.
+   * This is the primary path for agent animation setup.
    */
   setAnimationSets(sets: Record<string, AnimationSetDef>): void {
     this.animResolver = new AnimationResolver(sets);
@@ -464,11 +382,19 @@ export class GameScene extends Phaser.Scene {
     // Create Phaser animations for the main-agent set (if available)
     const mainSet = sets['main-agent'];
     if (mainSet && this.textures.exists(mainSet.spritesheet)) {
+      // Derive agent config from animation set
+      this.agentSheetName = mainSet.spritesheet;
+      const actions = new Set<string>();
+      const directions = new Set<string>();
+
       for (const [animName, clip] of Object.entries(mainSet.animations)) {
         if (clip.alias) continue; // Skip aliases — they resolve at lookup time
 
+        actions.add(animName);
+
         if (clip.directions) {
           for (const [dir, dirDef] of Object.entries(clip.directions)) {
+            directions.add(dir);
             const animKey = `agent_${animName}_${dir}`;
             if (this.anims.exists(animKey)) continue;
 
@@ -506,8 +432,33 @@ export class GameScene extends Phaser.Scene {
         }
       }
 
+      this.agentActions = [...actions];
+      this.agentDirections = directions.size > 0 ? [...directions] : ['down', 'up', 'left', 'right'];
+
+      // Create the agent sprite if not already created
+      if (!this.agentSprite) {
+        const defaultFrame = `char-${this.agentActions[0] || 'idle'}-${this.agentDirections[0] || 'down'}-0`;
+        this.agentSprite = this.add.sprite(0, 0, this.agentSheetName, defaultFrame);
+        this.agentSprite.setOrigin(0.5, 0.75);
+        this.agentSprite.setDepth(10);
+
+        // Enable Light2D pipeline with normal map if available
+        if (this.lightsEnabled && this.textures.exists(`${this.agentSheetName}_normal`)) {
+          try {
+            this.agentSprite.setPipeline('Light2D');
+            this.agentSprite.normalMap = this.textures.get(`${this.agentSheetName}_normal`);
+            console.log(`[GameScene] Agent sprite using Light2D pipeline with normal map`);
+          } catch (e) {
+            console.warn(`[GameScene] Failed to set Light2D pipeline on agent: ${e}`);
+          }
+        }
+
+        this.charactersLayer.add(this.agentSprite);
+      }
+
+      this.agentAnimationsCreated = true;
       this.animSetsCreated = true;
-      console.log(`[GameScene] Animation set Phaser animations created for main-agent`);
+      console.log(`[GameScene] Animation set created for main-agent: ${this.agentActions.length} actions, ${this.agentDirections.length} directions`);
     }
   }
 
@@ -902,6 +853,51 @@ export class GameScene extends Phaser.Scene {
 
     this.tileSprites.set(key, sprite);
     this.animatedSprites.push(sprite);
+  }
+
+  /**
+   * Update an existing tile sprite's texture at runtime (for state-machine-driven tiles).
+   * Swaps to a new spriteId without recreating the Phaser sprite.
+   */
+  updateTileSprite(tileKey: string, newSpriteId: string): void {
+    const existing = this.tileSprites.get(tileKey);
+    if (!existing || !existing.active) return;
+
+    const parts = newSpriteId.split('/');
+    if (parts.length < 2) return;
+    const [sheet, frame] = parts;
+
+    if (!this.textures.exists(sheet)) return;
+    const texture = this.textures.get(sheet);
+    if (!texture.has(frame)) return;
+
+    const sprite = existing as Phaser.GameObjects.Sprite;
+
+    // Check if new sprite is multi-frame animated
+    const frameIds = this.getAnimationFrameIds(newSpriteId);
+    if (frameIds.length >= 2) {
+      // Create or reuse a Phaser animation for this state
+      const animKey = `anim_sm_${tileKey}_${frame}`;
+      if (!this.anims.exists(animKey)) {
+        const frames = frameIds.map(f => {
+          const [s, fr] = f.split('/');
+          return { key: s, frame: fr };
+        });
+        this.anims.create({
+          key: animKey,
+          frames,
+          frameRate: 4,
+          repeat: -1,
+        });
+      }
+      sprite.play(animKey);
+    } else {
+      // Static swap — stop any playing animation, set new texture/frame
+      if (sprite.anims?.isPlaying) {
+        sprite.anims.stop();
+      }
+      sprite.setTexture(sheet, frame);
+    }
   }
 
   /**

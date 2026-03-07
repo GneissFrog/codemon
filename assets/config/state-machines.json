@@ -90,6 +90,34 @@
         { "from": "paused", "to": "wandering", "trigger": { "type": "timer" } },
         { "from": "wandering", "to": "paused", "trigger": { "type": "event", "event": "movement_complete" } }
       ]
+    },
+    "flower-cycle": {
+      "id": "flower-cycle",
+      "description": "Flower cycling between color variants",
+      "initialState": "red",
+      "states": [
+        { "id": "red", "spriteOverride": "biome/flower-red", "duration": 6000 },
+        { "id": "small", "spriteOverride": "biome/flower-small", "duration": 4000 },
+        { "id": "sunflower", "spriteOverride": "biome/sunflower", "duration": 8000 }
+      ],
+      "transitions": [
+        { "from": "red", "to": "small", "trigger": { "type": "timer" } },
+        { "from": "small", "to": "sunflower", "trigger": { "type": "timer" } },
+        { "from": "sunflower", "to": "red", "trigger": { "type": "timer" } }
+      ]
+    },
+    "mushroom-swap": {
+      "id": "mushroom-swap",
+      "description": "Mushroom alternating between red and brown",
+      "initialState": "red",
+      "states": [
+        { "id": "red", "spriteOverride": "biome/mushroom-red", "duration": 5000 },
+        { "id": "brown", "spriteOverride": "biome/mushroom-brown", "duration": 5000 }
+      ],
+      "transitions": [
+        { "from": "red", "to": "brown", "trigger": { "type": "timer" } },
+        { "from": "brown", "to": "red", "trigger": { "type": "timer" } }
+      ]
     }
   },
   "agentTypes": {

@@ -4,11 +4,12 @@
  */
 
 import * as vscode from 'vscode';
-import { TileModuleDef, ModuleCategory } from '../core/types';
+import { TileModuleDef, ModuleCategory, CategoryBudgetConfig } from '../core/types';
 import { normalizeModuleDef } from './ModuleParser';
 
 export interface TileModulesFile {
   version: number;
+  categoryBudgets?: Record<string, CategoryBudgetConfig>;
   modules: Record<string, unknown>[];
 }
 
@@ -16,6 +17,7 @@ export class ModuleRegistry {
   private extensionUri: vscode.Uri;
   private modules = new Map<string, TileModuleDef>();
   private byCategory = new Map<ModuleCategory, TileModuleDef[]>();
+  private budgetConfig?: Record<string, CategoryBudgetConfig>;
   private loaded = false;
 
   constructor(extensionUri: vscode.Uri) {
@@ -36,6 +38,8 @@ export class ModuleRegistry {
 
       const data = await vscode.workspace.fs.readFile(filePath);
       const raw: TileModulesFile = JSON.parse(data.toString());
+
+      this.budgetConfig = raw.categoryBudgets;
 
       for (const rawModule of raw.modules) {
         const moduleDef = normalizeModuleDef(rawModule);
@@ -103,10 +107,16 @@ export class ModuleRegistry {
     return this.loaded;
   }
 
+  /** Get category budget overrides from config (if any) */
+  getCategoryBudgets(): Record<string, CategoryBudgetConfig> | undefined {
+    return this.budgetConfig;
+  }
+
   /** Force reload from disk */
   async reload(): Promise<void> {
     this.modules.clear();
     this.byCategory.clear();
+    this.budgetConfig = undefined;
     this.loaded = false;
     await this.load();
   }
@@ -120,10 +130,13 @@ export class ModuleRegistry {
       'tile-modules.json'
     );
 
-    const data = {
+    const data: Record<string, unknown> = {
       version: 1,
       modules: this.getAll(),
     };
+    if (this.budgetConfig) {
+      data.categoryBudgets = this.budgetConfig;
+    }
 
     const content = JSON.stringify(data, null, 2);
     await vscode.workspace.fs.writeFile(filePath, Buffer.from(content, 'utf-8'));
@@ -166,6 +179,7 @@ export class ModuleRegistry {
   dispose(): void {
     this.modules.clear();
     this.byCategory.clear();
+    this.budgetConfig = undefined;
     this.loaded = false;
   }
 }

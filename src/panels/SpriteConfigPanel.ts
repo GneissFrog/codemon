@@ -11,10 +11,8 @@
 import * as vscode from 'vscode';
 import { getNonce } from './panel-utils';
 import { PIXEL_THEME_CSS } from '../webview/shared/pixel-theme';
-import { getAssetLoader, WebviewAssetData, migrateCharacterConfig } from '../overworld/core/AssetLoader';
+import { getAssetLoader, WebviewAssetData } from '../overworld/core/AssetLoader';
 import { getGameViewPanel } from './GameViewPanel';
-import { CharacterConfig, ActionConfig, AnimationSetDef } from '../overworld/core/types';
-import { getAnimationRegistry } from '../animation/AnimationRegistry';
 
 export class SpriteConfigPanel implements vscode.WebviewViewProvider {
   public static readonly viewType = 'codemon.spriteConfig';
@@ -65,19 +63,10 @@ export class SpriteConfigPanel implements vscode.WebviewViewProvider {
         case 'deleteSprite':
           await this._deleteSprite(message.data as { sheetName: string; spriteName: string });
           break;
-        case 'updateCharacterConfig':
-          await this._updateCharacterConfig(message.data as { sheetName: string; characterConfig: CharacterConfig });
-          break;
         case 'highlightSprite':
           // Forward highlight request to GameViewPanel
           const spriteId = (message.data as { spriteId: string | null }).spriteId;
           getGameViewPanel(this._extensionUri).highlightSprite(spriteId);
-          break;
-        case 'setActiveCharacterSheet':
-          await this._updateSpriteMapping({ purpose: 'character', sheetName: (message.data as { sheetName: string }).sheetName });
-          break;
-        case 'updateSpriteMapping':
-          await this._updateSpriteMapping(message.data as { purpose: string; sheetName: string });
           break;
         case 'browseImage':
           await this._browseForImage();
@@ -92,20 +81,6 @@ export class SpriteConfigPanel implements vscode.WebviewViewProvider {
             frameW: number;
             frameH: number;
             autoGen: boolean;
-            isCharacter: boolean;
-            directions?: string;
-            actions?: string;
-          });
-          break;
-        case 'updateLighting':
-          // Forward lighting config to GameViewPanel
-          getGameViewPanel(this._extensionUri).updateLighting(message.data as {
-            enabled?: boolean;
-            dayNightCycle?: boolean;
-            agentLight?: boolean;
-            agentLightRadius?: number;
-            agentLightIntensity?: number;
-            agentLightColor?: number;
           });
           break;
         case 'browseAsepriteJson':
@@ -114,17 +89,8 @@ export class SpriteConfigPanel implements vscode.WebviewViewProvider {
         case 'updateAsepriteConfig':
           await this._updateAsepriteConfig(message.data as { sheetName: string; asepriteConfig: { jsonFile: string; tags?: string[] } | null });
           break;
-        case 'loadAnimationSets':
-          await this._sendAnimationSets();
-          break;
-        case 'saveAnimationSet':
-          await this._saveAnimationSet(message.data as { id: string; set: AnimationSetDef });
-          break;
-        case 'deleteAnimationSet':
-          await this._deleteAnimationSet((message.data as { id: string }).id);
-          break;
-        case 'createAnimationSet':
-          await this._createAnimationSet(message.data as { id: string; spritesheet: string });
+        case 'resizeAllSprites':
+          await this._resizeAllSprites(message.data as { sheetName: string; newW: number; newH: number });
           break;
       }
     });
@@ -147,8 +113,6 @@ export class SpriteConfigPanel implements vscode.WebviewViewProvider {
         assets,
       });
 
-      // Also send animation sets
-      await this._sendAnimationSets();
     } catch (error) {
       console.error('[SpriteConfig] Failed to load assets:', error);
     }
@@ -217,6 +181,53 @@ export class SpriteConfigPanel implements vscode.WebviewViewProvider {
   }
 
   /**
+   * Resize all sprites in a sheet to match a new grid size
+   */
+  private async _resizeAllSprites(data: { sheetName: string; newW: number; newH: number }): Promise<void> {
+    try {
+      const manifest = await this._readManifest();
+      const sheets = manifest.spritesheets as Record<string, { sprites: Record<string, { x: number; y: number; w: number; h: number }> }>;
+
+      if (!sheets[data.sheetName]) {
+        vscode.window.showErrorMessage(`Sheet "${data.sheetName}" not found`);
+        return;
+      }
+
+      const sprites = sheets[data.sheetName].sprites;
+      let count = 0;
+
+      for (const [name, sprite] of Object.entries(sprites)) {
+        // Infer old grid position from current sprite coords
+        const oldW = sprite.w || 16;
+        const oldH = sprite.h || 16;
+        const gridX = Math.round(sprite.x / oldW);
+        const gridY = Math.round(sprite.y / oldH);
+
+        // Re-snap to new grid
+        sprites[name] = {
+          x: gridX * data.newW,
+          y: gridY * data.newH,
+          w: data.newW,
+          h: data.newH,
+        };
+        count++;
+      }
+
+      await this._writeManifest(manifest);
+
+      const loader = getAssetLoader(this._extensionUri);
+      await loader.load();
+      await this._sendAssets();
+      await getGameViewPanel(this._extensionUri).refreshAssets();
+
+      vscode.window.showInformationMessage(`Resized ${count} sprites in "${data.sheetName}" to ${data.newW}×${data.newH}`);
+    } catch (error) {
+      console.error('[SpriteConfig] Failed to resize sprites:', error);
+      vscode.window.showErrorMessage(`Failed to resize sprites: ${error}`);
+    }
+  }
+
+  /**
    * Add a new sprite to a spritesheet
    */
   private async _addSprite(data: { sheetName: string; spriteName: string; sprite: { x: number; y: number; w: number; h: number } }): Promise<void> {
@@ -280,74 +291,6 @@ export class SpriteConfigPanel implements vscode.WebviewViewProvider {
   }
 
   /**
-   * Update character config for a spritesheet
-   */
-  private async _updateCharacterConfig(data: { sheetName: string; characterConfig: CharacterConfig }): Promise<void> {
-    try {
-      const manifest = await this._readManifest();
-      const sheets = manifest.spritesheets as Record<string, {
-        characterConfig?: CharacterConfig;
-      }>;
-
-      if (sheets[data.sheetName]) {
-        // Update the character config
-        sheets[data.sheetName].characterConfig = data.characterConfig;
-
-        await this._writeManifest(manifest);
-
-        // Reload assets and notify both webviews
-        const loader = getAssetLoader(this._extensionUri);
-        loader.dispose(); // Clear cache to force reload
-        await loader.load();
-        await this._sendAssets();
-        await getGameViewPanel(this._extensionUri).refreshAssets();
-
-        vscode.window.showInformationMessage(
-          `Updated action configuration for ${data.sheetName}`
-        );
-      } else {
-        vscode.window.showErrorMessage(`Spritesheet "${data.sheetName}" not found`);
-      }
-    } catch (error) {
-      console.error('[SpriteConfig] Failed to update character config:', error);
-      vscode.window.showErrorMessage(`Failed to update config: ${error}`);
-    }
-  }
-
-  /**
-   * Update a sprite mapping (assign a spritesheet to a purpose)
-   */
-  private async _updateSpriteMapping(data: { purpose: string; sheetName: string }): Promise<void> {
-    try {
-      const manifest = await this._readManifest();
-
-      // Initialize spriteMappings if it doesn't exist
-      if (!manifest.spriteMappings) {
-        manifest.spriteMappings = {};
-      }
-
-      const mappings = manifest.spriteMappings as Record<string, string>;
-      mappings[data.purpose] = data.sheetName;
-
-      await this._writeManifest(manifest);
-
-      // Reload assets and notify both webviews
-      const loader = getAssetLoader(this._extensionUri);
-      loader.dispose(); // Clear cache to force reload
-      await loader.load();
-      await this._sendAssets();
-      await getGameViewPanel(this._extensionUri).refreshAssets();
-
-      vscode.window.showInformationMessage(
-        `Set "${data.sheetName}" as the spritesheet for "${data.purpose}"`
-      );
-    } catch (error) {
-      console.error('[SpriteConfig] Failed to update sprite mapping:', error);
-      vscode.window.showErrorMessage(`Failed to update sprite mapping: ${error}`);
-    }
-  }
-
-  /**
    * Browse for an image file and return the relative path
    */
   private async _browseForImage(): Promise<void> {
@@ -385,9 +328,6 @@ export class SpriteConfigPanel implements vscode.WebviewViewProvider {
     frameW: number;
     frameH: number;
     autoGen: boolean;
-    isCharacter: boolean;
-    directions?: string;
-    actions?: string;
   }): Promise<void> {
     if (!this._view) return;
 
@@ -456,41 +396,16 @@ export class SpriteConfigPanel implements vscode.WebviewViewProvider {
       const sprites: Record<string, { x: number; y: number; w: number; h: number }> = {};
 
       if (data.autoGen) {
-        if (data.isCharacter && data.actions && data.directions) {
-          // Generate character sprites based on actions and directions
-          const directions = data.directions.split(',').map(d => d.trim());
-          const actionDefs = data.actions.split(',').map(a => {
-            const [name, frames] = a.trim().split(':');
-            return { name, frames: parseInt(frames) || 4 };
-          });
-
-          let row = 0;
-          for (const actionDef of actionDefs) {
-            for (const dir of directions) {
-              for (let f = 0; f < actionDef.frames; f++) {
-                const spriteName = `char-${actionDef.name}-${dir}-${f}`;
-                sprites[spriteName] = {
-                  x: f * frameW,
-                  y: row * frameH,
-                  w: frameW,
-                  h: frameH,
-                };
-              }
-              row++;
-            }
-          }
-        } else {
-          // Generate grid-based sprites
-          for (let r = 0; r < rows; r++) {
-            for (let c = 0; c < cols; c++) {
-              const spriteName = `sprite-${c}-${r}`;
-              sprites[spriteName] = {
-                x: c * frameW,
-                y: r * frameH,
-                w: frameW,
-                h: frameH,
-              };
-            }
+        // Generate grid-based sprites
+        for (let r = 0; r < rows; r++) {
+          for (let c = 0; c < cols; c++) {
+            const spriteName = `sprite-${c}-${r}`;
+            sprites[spriteName] = {
+              x: c * frameW,
+              y: r * frameH,
+              w: frameW,
+              h: frameH,
+            };
           }
         }
       }
@@ -503,26 +418,6 @@ export class SpriteConfigPanel implements vscode.WebviewViewProvider {
         grid: { cols, rows },
         sprites,
       };
-
-      // Add character config if needed
-      if (data.isCharacter) {
-        sheetDef.isCharacter = true;
-        const directions = (data.directions || 'down,up,left,right').split(',').map(d => d.trim());
-        const actionDefs = (data.actions || 'idle:4,walk:6').split(',').map(a => {
-          const [name, frames] = a.trim().split(':');
-          return { name, frames: parseInt(frames) || 4 };
-        });
-
-        sheetDef.characterConfig = {
-          directions,
-          actions: actionDefs.map(a => ({
-            name: a.name,
-            frames: a.frames,
-            skill: undefined,
-            customSkillName: undefined,
-          })),
-        };
-      }
 
       // Add to manifest
       sheets[data.name] = sheetDef;
@@ -707,46 +602,6 @@ export class SpriteConfigPanel implements vscode.WebviewViewProvider {
     }
   }
 
-  // ─── Animation Sets ──────────────────────────────────────────────────
-
-  private async _sendAnimationSets(): Promise<void> {
-    if (!this._view) return;
-    try {
-      const registry = getAnimationRegistry(this._extensionUri);
-      if (!registry.getAllSets().size) await registry.load();
-      this._view.webview.postMessage({
-        type: 'loadAnimationSets',
-        sets: registry.getSerializableConfig(),
-      });
-    } catch (e) {
-      console.warn('[SpriteConfig] Failed to send animation sets:', e);
-    }
-  }
-
-  private async _saveAnimationSet(data: { id: string; set: AnimationSetDef }): Promise<void> {
-    const registry = getAnimationRegistry(this._extensionUri);
-    registry.setAnimationSet(data.id, data.set);
-    await registry.save();
-    await this._sendAnimationSets();
-  }
-
-  private async _deleteAnimationSet(id: string): Promise<void> {
-    const registry = getAnimationRegistry(this._extensionUri);
-    registry.deleteAnimationSet(id);
-    await registry.save();
-    await this._sendAnimationSets();
-  }
-
-  private async _createAnimationSet(data: { id: string; spritesheet: string }): Promise<void> {
-    const registry = getAnimationRegistry(this._extensionUri);
-    registry.setAnimationSet(data.id, {
-      spritesheet: data.spritesheet,
-      animations: { idle: { frames: [], fps: 4, loop: true } },
-    });
-    await registry.save();
-    await this._sendAnimationSets();
-  }
-
   private _getHtmlForWebview(webview: vscode.Webview): string {
     const nonce = getNonce();
 
@@ -879,35 +734,6 @@ export class SpriteConfigPanel implements vscode.WebviewViewProvider {
     }
       text-transform: uppercase;
       letter-spacing: 0.5px;
-    }
-
-    .spritesheet-actions {
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
-      margin-left: auto;
-    }
-
-    .use-character-btn {
-      font-size: 8px;
-      padding: 2px 6px;
-      background: transparent;
-      color: var(--pixel-muted);
-      border: 1px solid var(--pixel-border);
-      cursor: pointer;
-      white-space: nowrap;
-    }
-
-    .use-character-btn:hover {
-      background: var(--pixel-bg-lighter);
-      color: var(--pixel-fg);
-      border-color: var(--pixel-accent);
-    }
-
-    .use-character-btn.active {
-      background: var(--pixel-accent);
-      color: var(--pixel-bg);
-      border-color: var(--pixel-accent);
     }
 
     .sprite-viewer {
@@ -1321,15 +1147,7 @@ export class SpriteConfigPanel implements vscode.WebviewViewProvider {
       border-color: var(--pixel-accent);
     }
 
-    .char-config-section {
-      margin-top: 6px;
-      padding-top: 6px;
-      border-top: 1px solid var(--pixel-border);
-    }
 
-    .char-config-section.hidden {
-      display: none;
-    }
 
     .error-msg {
       color: var(--pixel-error);
@@ -1519,186 +1337,10 @@ export class SpriteConfigPanel implements vscode.WebviewViewProvider {
       opacity: 0.9;
     }
 
-    /* Lighting Section */
-    .lighting-section {
-      padding: 8px;
-    }
-
-    .lighting-row {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      margin-bottom: 8px;
-    }
-
-    .lighting-label {
-      font-size: 9px;
-      color: var(--pixel-fg);
-    }
-
-    .lighting-slider-row {
-      margin-bottom: 8px;
-    }
-
-    .lighting-slider-label {
-      display: flex;
-      justify-content: space-between;
-      font-size: 9px;
-      color: var(--pixel-fg);
-      margin-bottom: 2px;
-    }
-
-    .lighting-slider-value {
-      color: var(--pixel-accent);
-      font-family: monospace;
-    }
-
-    input[type="range"] {
-      width: 100%;
-      height: 4px;
-      background: var(--pixel-bg);
-      border: 1px solid var(--pixel-border);
-      border-radius: 0;
-      outline: none;
-      -webkit-appearance: none;
-      cursor: pointer;
-    }
-
-    input[type="range"]::-webkit-slider-thumb {
-      -webkit-appearance: none;
-      width: 12px;
-      height: 12px;
-      background: var(--pixel-accent);
-      border: 1px solid var(--pixel-border);
-      cursor: pointer;
-    }
-
-    input[type="range"]::-webkit-slider-thumb:hover {
-      background: var(--pixel-fg);
-    }
-
-    .color-picker-row {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      margin-bottom: 8px;
-    }
-
-    .color-picker-row input[type="color"] {
-      width: 32px;
-      height: 20px;
-      border: 1px solid var(--pixel-border);
-      background: var(--pixel-bg);
-      cursor: pointer;
-      padding: 0;
-    }
-
-    .color-hex {
-      font-size: 9px;
-      font-family: monospace;
-      color: var(--pixel-muted);
-    }
-
-    .lighting-help {
-      font-size: 8px;
-      color: var(--pixel-muted);
-      margin-top: 8px;
-      padding: 4px;
-      background: var(--pixel-bg);
-      border: 1px solid var(--pixel-border);
-    }
-
-    /* Animation Sets Section */
-    .anim-set-controls { display: flex; gap: 4px; margin-bottom: 8px; }
-    .anim-set-controls select { flex: 1; font-size: 9px; background: var(--pixel-bg); border: 1px solid var(--pixel-border); color: var(--pixel-fg); padding: 3px 4px; }
-    /* Sticky Pick-Mode Toolbar */
-    .pick-mode-toolbar {
-      position: sticky;
-      top: 0;
-      z-index: 100;
-      background: var(--pixel-accent);
-      color: var(--pixel-bg);
-      padding: 4px 8px;
-      display: none;
-      margin: -8px -8px 8px -8px;
-      border-bottom: 2px solid color-mix(in srgb, var(--pixel-accent) 80%, #000);
-    }
-    .pick-mode-toolbar.active { display: block; }
-    .pick-toolbar-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      font-size: 9px;
-      font-weight: bold;
-      margin-bottom: 3px;
-    }
-    .pick-toolbar-header button {
-      font-size: 8px;
-      padding: 2px 8px;
-      background: var(--pixel-bg);
-      color: var(--pixel-fg);
-      border: 1px solid var(--pixel-border);
-      cursor: pointer;
-      font-family: inherit;
-    }
-    .pick-toolbar-header button:hover {
-      background: var(--pixel-bg-lighter);
-    }
-    .pick-toolbar-strip {
-      display: flex;
-      gap: 2px;
-      overflow-x: auto;
-      padding: 2px 0;
-      min-height: 24px;
-      align-items: center;
-    }
-    .pick-toolbar-strip:empty::after {
-      content: 'Click sprites above to add frames';
-      font-size: 8px;
-      opacity: 0.7;
-    }
-    .pick-toolbar-frame {
-      width: 24px; height: 24px;
-      border: 1px solid rgba(0,0,0,0.3);
-      flex-shrink: 0;
-    }
-    .pick-toolbar-frame canvas {
-      width: 24px; height: 24px;
-      image-rendering: pixelated;
-    }
-
-    .anim-list-container { max-height: 160px; overflow-y: auto; margin-bottom: 8px; }
-    .anim-item { display: flex; justify-content: space-between; align-items: center; padding: 4px 6px; border-bottom: 1px solid var(--pixel-border); cursor: pointer; font-size: 9px; }
-    .anim-item:hover { background: var(--pixel-bg-lighter); }
-    .anim-item.selected { background: var(--pixel-bg-lighter); border-left: 3px solid var(--pixel-accent); }
-    .anim-alias-badge { color: #b877db; font-size: 8px; }
-    .anim-meta-info { color: var(--pixel-muted); font-size: 8px; }
-    .pick-mode-active #sprite-canvas { cursor: cell !important; }
-    .frame-strip { display: flex; flex-wrap: wrap; gap: 3px; padding: 4px; background: var(--pixel-bg); border: 1px solid var(--pixel-border); min-height: 30px; max-height: 90px; overflow-y: auto; }
-    .frame-strip-item { position: relative; width: 28px; height: 28px; border: 1px solid var(--pixel-border); }
-    .frame-strip-item canvas { width: 28px; height: 28px; image-rendering: pixelated; }
-    .frame-strip-item .frame-index { position: absolute; bottom: 0; right: 0; font-size: 6px; background: rgba(0,0,0,0.7); color: var(--pixel-fg); padding: 0 2px; line-height: 1.2; }
-    .frame-strip-item .frame-remove { position: absolute; top: -4px; right: -4px; width: 12px; height: 12px; background: #e74c3c; color: #fff; border: none; font-size: 7px; cursor: pointer; display: none; line-height: 12px; text-align: center; border-radius: 50%; }
-    .frame-strip-item:hover .frame-remove { display: block; }
-    .frame-strip-empty { color: var(--pixel-muted); font-size: 8px; padding: 8px; text-align: center; width: 100%; }
-    .dir-tabs { display: flex; gap: 2px; margin-bottom: 6px; }
-    .dir-tab { flex: 1; padding: 3px; background: var(--pixel-bg); border: 1px solid var(--pixel-border); color: var(--pixel-muted); cursor: pointer; font-size: 8px; text-align: center; font-family: inherit; }
-    .dir-tab.active { background: var(--pixel-bg-light); border-color: var(--pixel-accent); color: var(--pixel-accent); }
-    .anim-preview-box { display: flex; justify-content: center; padding: 6px; background: repeating-conic-gradient(#333 0% 25%, #222 0% 50%) 50% / 8px 8px; border: 1px solid var(--pixel-border); margin-top: 6px; }
-    .anim-preview-box canvas { image-rendering: pixelated; }
   </style>
 </head>
 <body>
   <div class="sprite-config">
-    <div class="pick-mode-toolbar" id="pick-mode-toolbar">
-      <div class="pick-toolbar-header">
-        <span>PICK MODE</span>
-        <span id="pick-frame-count">0 frames</span>
-        <button id="btn-pick-done">Done</button>
-      </div>
-      <div class="pick-toolbar-strip" id="pick-toolbar-strip"></div>
-    </div>
-
     <div class="section-title" data-section="spritesheets">Spritesheets</div>
     <div class="section-content" data-section="spritesheets">
       <div class="spritesheet-list" id="spritesheet-list">
@@ -1724,6 +1366,7 @@ export class SpriteConfigPanel implements vscode.WebviewViewProvider {
         <input type="number" id="grid-width" value="16" min="1" max="64">
         <span style="color: var(--pixel-muted)">×</span>
         <input type="number" id="grid-height" value="16" min="1" max="64">
+        <button class="action-btn" id="btn-resize-all" style="font-size:8px;margin-left:4px;" title="Resize all sprites in this sheet to match the current grid">Resize All</button>
       </div>
       <div class="sprite-canvas-container" id="canvas-container">
         <canvas id="sprite-canvas"></canvas>
@@ -1740,133 +1383,6 @@ export class SpriteConfigPanel implements vscode.WebviewViewProvider {
         </div>
       </div>
     </div>
-    </div>
-
-    <!-- Aseprite Config Section -->
-    <div id="aseprite-section" style="display: none;">
-      <div class="section-title" data-section="aseprite-config">Aseprite Animation</div>
-      <div class="section-content" data-section="aseprite-config">
-        <div class="aseprite-config-panel">
-          <div class="aseprite-status" id="aseprite-status">
-            <span class="status-label">Status:</span>
-            <span class="status-value" id="aseprite-status-value">Not configured</span>
-          </div>
-          <div class="aseprite-json-path" id="aseprite-json-path" style="display: none;">
-            <span class="path-label">JSON:</span>
-            <span class="path-value" id="aseprite-json-value">-</span>
-          </div>
-          <div class="aseprite-tags" id="aseprite-tags-section" style="display: none;">
-            <span class="tags-label">Tags:</span>
-            <div class="tags-list" id="aseprite-tags-list">-</div>
-          </div>
-          <div class="aseprite-actions">
-            <button class="action-btn" id="browse-aseprite">Link JSON File</button>
-            <button class="action-btn danger" id="unlink-aseprite" style="display: none;">Unlink</button>
-          </div>
-          <div class="aseprite-help">
-            Link an Aseprite-exported JSON file to automatically create animations from tags. Export from Aseprite: File → Export Sprite Sheet → JSON Data (with Tags checked)
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Animation Sets Section -->
-    <div id="animation-sets-wrapper" style="display: none;">
-      <div class="section-title" data-section="animation-sets">Animation Sets</div>
-      <div class="section-content" data-section="animation-sets">
-
-        <!-- Set selector -->
-        <div style="margin-bottom:8px;">
-          <div class="anim-set-controls">
-            <select id="anim-set-select"><option value="">-- select set --</option></select>
-            <button class="action-btn" style="flex:none;font-size:8px;" id="btn-new-anim-set">+</button>
-            <button class="action-btn" style="flex:none;font-size:8px;color:#e74c3c;" id="btn-delete-anim-set">x</button>
-          </div>
-          <div style="font-size:8px;color:var(--pixel-muted);margin-bottom:4px;" id="anim-set-sheet-info"></div>
-        </div>
-
-        <!-- Animation list -->
-        <div class="anim-list-container" id="anim-set-list">
-          <div style="color:var(--pixel-muted);font-size:8px;text-align:center;padding:12px;">Select a set above</div>
-        </div>
-        <button class="action-btn" style="width:100%;font-size:8px;margin-bottom:8px;" id="btn-add-anim-clip">+ Add Animation</button>
-
-        <!-- Clip editor -->
-        <div id="anim-clip-editor" style="display:none;">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
-            <span style="font-size:9px;color:var(--pixel-accent);" id="clip-editor-title">Edit Animation</span>
-            <button class="action-btn" style="font-size:7px;padding:2px 6px;color:#e74c3c;" id="btn-delete-clip">Delete</button>
-          </div>
-
-          <div class="edit-row">
-            <span class="edit-label">Name:</span>
-            <input type="text" class="edit-input" id="clip-name-input">
-          </div>
-
-          <label style="display:flex;align-items:center;gap:6px;margin:6px 0;font-size:8px;cursor:pointer;">
-            <input type="checkbox" id="clip-is-alias" style="width:14px;height:14px;">
-            Alias (reuse another animation)
-          </label>
-
-          <!-- Alias section -->
-          <div id="clip-alias-section" style="display:none;">
-            <div class="edit-row">
-              <span class="edit-label">Target:</span>
-              <select class="edit-input" id="clip-alias-target" style="flex:1;"><option value="">-- select --</option></select>
-            </div>
-          </div>
-
-          <!-- Frames section -->
-          <div id="clip-frames-section">
-            <label style="display:flex;align-items:center;gap:6px;margin:6px 0;font-size:8px;cursor:pointer;">
-              <input type="checkbox" id="clip-is-directional" style="width:14px;height:14px;">
-              Directional (per-direction frames)
-            </label>
-
-            <div class="dir-tabs" id="clip-dir-tabs" style="display:none;">
-              <button class="dir-tab active" data-dir="down">Down</button>
-              <button class="dir-tab" data-dir="up">Up</button>
-              <button class="dir-tab" data-dir="left">Left</button>
-              <button class="dir-tab" data-dir="right">Right</button>
-            </div>
-
-            <div style="margin-bottom:6px;">
-              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px;">
-                <span style="font-size:8px;color:var(--pixel-muted);">FRAMES</span>
-                <button class="action-btn" style="font-size:7px;padding:2px 6px;" id="btn-pick-frames">Pick from grid</button>
-              </div>
-              <div class="frame-strip" id="clip-frame-strip">
-                <div class="frame-strip-empty">No frames. Click "Pick from grid" then click sprites above.</div>
-              </div>
-            </div>
-
-            <div style="margin-bottom:6px;">
-              <div style="display:flex;justify-content:space-between;font-size:8px;color:var(--pixel-muted);margin-bottom:2px;">
-                <span>FPS</span>
-                <span style="color:var(--pixel-accent);" id="clip-fps-val">10</span>
-              </div>
-              <input type="range" id="clip-fps" min="1" max="30" value="10" style="width:100%;">
-            </div>
-
-            <label style="display:flex;align-items:center;gap:6px;margin-bottom:6px;font-size:8px;cursor:pointer;">
-              <input type="checkbox" id="clip-loop" checked style="width:14px;height:14px;">
-              Loop
-            </label>
-          </div>
-
-          <div class="anim-preview-box" id="clip-preview-box" style="display:none;">
-            <canvas id="clip-preview-canvas" width="64" height="64"></canvas>
-          </div>
-
-          <div class="btn-row" style="margin-top:6px;">
-            <button class="action-btn primary" id="btn-save-clip">Save Animation</button>
-          </div>
-        </div>
-
-        <div class="btn-row" style="margin-top:8px;">
-          <button class="action-btn primary" style="width:100%;" id="btn-save-anim-set">Save All Changes</button>
-        </div>
-      </div>
     </div>
 
     <div class="section-title" data-section="sprite-details">Sprite Details</div>
@@ -1927,48 +1443,30 @@ export class SpriteConfigPanel implements vscode.WebviewViewProvider {
       </div>
     </div>
 
-    <div class="section-title collapsed" data-section="lighting">Lighting (Game View)</div>
-    <div class="section-content collapsed" data-section="lighting" style="max-height:0;">
-      <div class="lighting-section">
-        <div class="lighting-row">
-          <span class="lighting-label">Enable Lighting</span>
-          <div class="toggle-switch active" id="lighting-enabled"></div>
-        </div>
-
-        <div class="lighting-row">
-          <span class="lighting-label">Day/Night Cycle</span>
-          <div class="toggle-switch active" id="lighting-daynight"></div>
-        </div>
-
-        <div class="lighting-row">
-          <span class="lighting-label">Agent Torch</span>
-          <div class="toggle-switch active" id="lighting-agent-torch"></div>
-        </div>
-
-        <div class="lighting-slider-row">
-          <div class="lighting-slider-label">
-            <span>Torch Radius</span>
-            <span class="lighting-slider-value" id="torch-radius-value">80</span>
+    <!-- Aseprite Config Section -->
+    <div id="aseprite-section" style="display: none;">
+      <div class="section-title" data-section="aseprite-config">Aseprite Animation</div>
+      <div class="section-content" data-section="aseprite-config">
+        <div class="aseprite-config-panel">
+          <div class="aseprite-status" id="aseprite-status">
+            <span class="status-label">Status:</span>
+            <span class="status-value" id="aseprite-status-value">Not configured</span>
           </div>
-          <input type="range" id="torch-radius" min="20" max="200" value="80">
-        </div>
-
-        <div class="lighting-slider-row">
-          <div class="lighting-slider-label">
-            <span>Torch Intensity</span>
-            <span class="lighting-slider-value" id="torch-intensity-value">0.8</span>
+          <div class="aseprite-json-path" id="aseprite-json-path" style="display: none;">
+            <span class="path-label">JSON:</span>
+            <span class="path-value" id="aseprite-json-value">-</span>
           </div>
-          <input type="range" id="torch-intensity" min="0" max="100" value="80">
-        </div>
-
-        <div class="color-picker-row">
-          <span class="lighting-label">Torch Color</span>
-          <input type="color" id="torch-color" value="#ffaa44">
-          <span class="color-hex" id="torch-color-hex">#ffaa44</span>
-        </div>
-
-        <div class="lighting-help">
-          Normal maps require spritesheets with _n.png suffix (e.g., tiles_n.png). Without normal maps, only point light falloff is visible.
+          <div class="aseprite-tags" id="aseprite-tags-section" style="display: none;">
+            <span class="tags-label">Tags:</span>
+            <div class="tags-list" id="aseprite-tags-list">-</div>
+          </div>
+          <div class="aseprite-actions">
+            <button class="action-btn" id="browse-aseprite">Link JSON File</button>
+            <button class="action-btn danger" id="unlink-aseprite" style="display: none;">Unlink</button>
+          </div>
+          <div class="aseprite-help">
+            Link an Aseprite-exported JSON file to automatically create animations from tags. Export from Aseprite: File &rarr; Export Sprite Sheet &rarr; JSON Data (with Tags checked)
+          </div>
         </div>
       </div>
     </div>
@@ -2006,22 +1504,6 @@ export class SpriteConfigPanel implements vscode.WebviewViewProvider {
           Auto-generate sprites from grid
         </label>
       </div>
-      <div class="form-row">
-        <label class="form-checkbox">
-          <input type="checkbox" id="new-sheet-is-char">
-          Is Character Spritesheet
-        </label>
-      </div>
-      <div class="char-config-section hidden" id="char-config-section">
-        <div class="form-row">
-          <label>Directions (comma-separated)</label>
-          <input type="text" id="new-sheet-directions" value="down,up,left,right">
-        </div>
-        <div class="form-row">
-          <label>Actions (name:frames, e.g., walk:6,idle:4)</label>
-          <input type="text" id="new-sheet-actions" value="idle:4,walk:6">
-        </div>
-      </div>
       <div class="error-msg" id="add-sheet-error"></div>
       <div class="form-actions">
         <button class="btn-create" id="create-sheet">Create</button>
@@ -2042,23 +1524,10 @@ export class SpriteConfigPanel implements vscode.WebviewViewProvider {
     // State
     let spritesheets = {};
     let currentSheet = null;
-    let spriteMappings = {};  // purpose -> sheetName
     let zoom = 2;
     let gridW = 16;
     let gridH = 16;
     let selectedSprite = null;
-
-    // Animation sets state
-    let animSets = {};
-    let currentAnimSetId = null;
-    let currentClipName = null;
-    let editingClipOriginalName = null;
-    let pickFrameMode = false;
-    let currentDirection = 'down';
-    let clipDirectionalFrames = {};
-    let clipFlatFrames = [];
-    let animPreviewTimer = null;
-    let animPreviewFrame = 0;
 
     // DOM
     const sheetList = document.getElementById('spritesheet-list');
@@ -2082,7 +1551,7 @@ export class SpriteConfigPanel implements vscode.WebviewViewProvider {
     // ─── Collapsible Sections ──────────────────────────────────────────────
 
     // Track collapsed state for each section
-    const collapsedSections = new Set(['lighting']);
+    const collapsedSections = new Set([]);
 
     // Helper to measure actual content height
     function measureContentHeight(content) {
@@ -2139,39 +1608,13 @@ export class SpriteConfigPanel implements vscode.WebviewViewProvider {
 
     // ─── Spritesheet List ──────────────────────────────────────────────
 
-    // Purpose options for sprite assignment
-    const PURPOSES = [
-      { value: '', label: '-- None --' },
-      { value: 'character', label: 'Player Character' },
-      { value: 'chicken', label: 'Chicken NPC' },
-      { value: 'cow', label: 'Cow NPC' },
-      { value: 'grass', label: 'Grass Tiles' },
-      { value: 'tilled-dirt', label: 'Tilled Dirt' },
-      { value: 'fences', label: 'Fences' },
-      { value: 'water', label: 'Water' },
-      { value: 'plants', label: 'Plants/Crops' },
-      { value: 'biome', label: 'Biome Decorations' },
-      { value: 'paths', label: 'Paths' },
-      { value: 'custom', label: 'Custom...' }
-    ];
-
-    // Get what purpose this sheet is assigned to
-    function getSheetPurpose(sheetName) {
-      for (const [purpose, mapped] of Object.entries(spriteMappings)) {
-        if (mapped === sheetName) return purpose;
-      }
-      return '';
-    }
-
     function renderSpritesheetList() {
       sheetList.innerHTML = '';
 
       for (const [name, sheet] of Object.entries(spritesheets)) {
         const item = document.createElement('div');
         item.className = 'spritesheet-item' + (currentSheet === name ? ' selected' : '');
-        item.onclick = (e) => {
-          // Don't select if clicking the purpose dropdown
-          if (e.target.classList.contains('purpose-select')) return;
+        item.onclick = () => {
           selectSpritesheet(name);
         };
 
@@ -2182,14 +1625,7 @@ export class SpriteConfigPanel implements vscode.WebviewViewProvider {
         const info = document.createElement('div');
         info.className = 'spritesheet-info';
 
-        const assignedPurpose = getSheetPurpose(name);
-        const isCharacter = sheet.isCharacter === true;
-
         let nameHtml = \`<div class="spritesheet-name">\${name}\`;
-        if (assignedPurpose) {
-          const purposeLabel = PURPOSES.find(p => p.value === assignedPurpose)?.label || assignedPurpose;
-          nameHtml += \` <span class="spritesheet-badge">\${purposeLabel}</span>\`;
-        }
         // Add Aseprite badge if this sheet has Aseprite data
         if (sheet.asepriteData) {
           nameHtml += \` <span class="spritesheet-badge aseprite">Aseprite</span>\`;
@@ -2213,34 +1649,11 @@ export class SpriteConfigPanel implements vscode.WebviewViewProvider {
         item.appendChild(img);
         item.appendChild(info);
 
-        // Add purpose dropdown for all sheets
-        const actions = document.createElement('div');
-        actions.className = 'spritesheet-actions';
-
-        const purposeSelect = document.createElement('select');
-        purposeSelect.className = 'purpose-select';
-        purposeSelect.innerHTML = PURPOSES.map(p =>
-          \`<option value="\${p.value}" \${assignedPurpose === p.value ? 'selected' : ''}>\${p.label}</option>\`
-        ).join('');
-
-        purposeSelect.onchange = (e) => {
-          e.stopPropagation();
-          const newPurpose = e.target.value;
-          updateSpriteMapping(name, newPurpose);
-        };
-
-        actions.appendChild(purposeSelect);
-        item.appendChild(actions);
-
         sheetList.appendChild(item);
       }
 
       // Update section height after content changes
       updateSectionHeight('spritesheets');
-    }
-
-    function updateSpriteMapping(sheetName, purpose) {
-      vscode.postMessage({ type: 'updateSpriteMapping', data: { purpose, sheetName } });
     }
 
     function selectSpritesheet(name) {
@@ -2262,9 +1675,6 @@ export class SpriteConfigPanel implements vscode.WebviewViewProvider {
       // Show/hide Aseprite config section
       updateAsepriteSection();
 
-      // Update animation sets section (auto-link, exit pick mode on sheet switch)
-      exitPickMode();
-      updateAnimationSetsSection();
     }
 
     // ─── Aseprite Config Section ───────────────────────────────────────────
@@ -2426,15 +1836,6 @@ export class SpriteConfigPanel implements vscode.WebviewViewProvider {
       // Snap to grid
       const snapX = gridX * gridW;
       const snapY = gridY * gridH;
-
-      // Pick frame mode: add sprite to current animation clip
-      if (pickFrameMode && currentSheet) {
-        const spriteName = findSpriteAtGrid(snapX, snapY);
-        if (spriteName) {
-          addFrameToCurrentClip(spriteName);
-        }
-        return;
-      }
 
       infoPos.textContent = \`\${x}, \${y}\`;
       infoGrid.textContent = \`\${gridX}, \${gridY}\`;
@@ -2598,14 +1999,27 @@ export class SpriteConfigPanel implements vscode.WebviewViewProvider {
 
     // ─── Grid Size ────────────────────────────────────────────────────────
 
-    gridWInput.onchange = () => {
+    gridWInput.oninput = () => {
       gridW = parseInt(gridWInput.value) || 16;
       renderSpriteViewer();
     };
 
-    gridHInput.onchange = () => {
+    gridHInput.oninput = () => {
       gridH = parseInt(gridHInput.value) || 16;
       renderSpriteViewer();
+    };
+
+    // Resize All button
+    document.getElementById('btn-resize-all').onclick = () => {
+      if (!currentSheet) return;
+      const sprites = spritesheets[currentSheet] && spritesheets[currentSheet].sprites;
+      const count = sprites ? Object.keys(sprites).length : 0;
+      if (!count) return;
+      if (!confirm('Resize all ' + count + ' sprites in "' + currentSheet + '" to ' + gridW + '×' + gridH + '?\\n\\nSprite positions will be re-snapped to the new grid.')) return;
+      vscode.postMessage({
+        type: 'resizeAllSprites',
+        data: { sheetName: currentSheet, newW: gridW, newH: gridH }
+      });
     };
 
     // ─── Open Manifest ────────────────────────────────────────────────────
@@ -2630,23 +2044,12 @@ export class SpriteConfigPanel implements vscode.WebviewViewProvider {
 
     const addSheetForm = document.getElementById('add-sheet-form');
     const addSheetToggle = document.getElementById('add-sheet-toggle');
-    const charConfigSection = document.getElementById('char-config-section');
-    const isCharCheckbox = document.getElementById('new-sheet-is-char');
     const addSheetError = document.getElementById('add-sheet-error');
 
     // Toggle form visibility
     addSheetToggle.onclick = () => {
       addSheetForm.classList.toggle('visible');
       addSheetError.textContent = '';
-    };
-
-    // Toggle character config section
-    isCharCheckbox.onchange = () => {
-      if (isCharCheckbox.checked) {
-        charConfigSection.classList.remove('hidden');
-      } else {
-        charConfigSection.classList.add('hidden');
-      }
     };
 
     // Browse for image
@@ -2669,8 +2072,6 @@ export class SpriteConfigPanel implements vscode.WebviewViewProvider {
         document.getElementById('new-sheet-frame-w').value = '16';
         document.getElementById('new-sheet-frame-h').value = '16';
         document.getElementById('new-sheet-auto-gen').checked = true;
-        document.getElementById('new-sheet-is-char').checked = false;
-        charConfigSection.classList.add('hidden');
         addSheetError.textContent = '';
       }
     });
@@ -2688,9 +2089,6 @@ export class SpriteConfigPanel implements vscode.WebviewViewProvider {
       const frameW = parseInt(document.getElementById('new-sheet-frame-w').value) || 16;
       const frameH = parseInt(document.getElementById('new-sheet-frame-h').value) || 16;
       const autoGen = document.getElementById('new-sheet-auto-gen').checked;
-      const isCharacter = document.getElementById('new-sheet-is-char').checked;
-      const directions = document.getElementById('new-sheet-directions').value.trim();
-      const actions = document.getElementById('new-sheet-actions').value.trim();
 
       if (!name) {
         addSheetError.textContent = 'Name is required';
@@ -2711,9 +2109,6 @@ export class SpriteConfigPanel implements vscode.WebviewViewProvider {
           frameW,
           frameH,
           autoGen,
-          isCharacter,
-          directions,
-          actions,
         },
       });
     };
@@ -2816,712 +2211,8 @@ export class SpriteConfigPanel implements vscode.WebviewViewProvider {
       }
     };
 
-    // ─── Lighting Controls ─────────────────────────────────────────────────
-
-    // Helper to convert hex to number
-    function hexToNumber(hex) {
-      return parseInt(hex.replace('#', ''), 16);
-    }
-
-    // Helper to convert number to hex
-    function numberToHex(num) {
-      return '#' + num.toString(16).padStart(6, '0');
-    }
-
-    // Toggle handlers
-    function setupLightingToggle(toggleId, configKey, defaultValue) {
-      const toggle = document.getElementById(toggleId);
-      if (!toggle) return;
-
-      // Set initial state
-      if (defaultValue) {
-        toggle.classList.add('active');
-      } else {
-        toggle.classList.remove('active');
-      }
-
-      toggle.addEventListener('click', () => {
-        const isActive = toggle.classList.toggle('active');
-        vscode.postMessage({
-          type: 'updateLighting',
-          data: { [configKey]: isActive }
-        });
-      });
-    }
-
-    setupLightingToggle('lighting-enabled', 'enabled', true);
-    setupLightingToggle('lighting-daynight', 'dayNightCycle', true);
-    setupLightingToggle('lighting-agent-torch', 'agentLight', true);
-
-    // Torch radius slider
-    const torchRadiusSlider = document.getElementById('torch-radius');
-    const torchRadiusValue = document.getElementById('torch-radius-value');
-    if (torchRadiusSlider) {
-      torchRadiusSlider.addEventListener('input', () => {
-        const value = parseInt(torchRadiusSlider.value);
-        torchRadiusValue.textContent = value;
-        vscode.postMessage({
-          type: 'updateLighting',
-          data: { agentLightRadius: value }
-        });
-      });
-    }
-
-    // Torch intensity slider
-    const torchIntensitySlider = document.getElementById('torch-intensity');
-    const torchIntensityValue = document.getElementById('torch-intensity-value');
-    if (torchIntensitySlider) {
-      torchIntensitySlider.addEventListener('input', () => {
-        const value = parseInt(torchIntensitySlider.value) / 100;
-        torchIntensityValue.textContent = value.toFixed(2);
-        vscode.postMessage({
-          type: 'updateLighting',
-          data: { agentLightIntensity: value }
-        });
-      });
-    }
-
-    // Torch color picker
-    const torchColorPicker = document.getElementById('torch-color');
-    const torchColorHex = document.getElementById('torch-color-hex');
-    if (torchColorPicker) {
-      torchColorPicker.addEventListener('input', () => {
-        const hex = torchColorPicker.value;
-        torchColorHex.textContent = hex;
-        vscode.postMessage({
-          type: 'updateLighting',
-          data: { agentLightColor: hexToNumber(hex) }
-        });
-      });
-    }
-
-    // ─── Animation Sets ──────────────────────────────────────────────────
-
-    const animSetSelect = document.getElementById('anim-set-select');
-    const animSetList = document.getElementById('anim-set-list');
-    const animClipEditor = document.getElementById('anim-clip-editor');
-    const animSetWrapper = document.getElementById('animation-sets-wrapper');
-    const animSetSheetInfo = document.getElementById('anim-set-sheet-info');
-    const pickToolbar = document.getElementById('pick-mode-toolbar');
-    const pickToolbarStrip = document.getElementById('pick-toolbar-strip');
-    const pickFrameCount = document.getElementById('pick-frame-count');
-    const clipNameInput = document.getElementById('clip-name-input');
-    const clipIsAlias = document.getElementById('clip-is-alias');
-    const clipAliasSection = document.getElementById('clip-alias-section');
-    const clipAliasTarget = document.getElementById('clip-alias-target');
-    const clipFramesSection = document.getElementById('clip-frames-section');
-    const clipIsDirectional = document.getElementById('clip-is-directional');
-    const clipDirTabs = document.getElementById('clip-dir-tabs');
-    const clipFrameStrip = document.getElementById('clip-frame-strip');
-    const clipFpsSlider = document.getElementById('clip-fps');
-    const clipFpsVal = document.getElementById('clip-fps-val');
-    const clipLoop = document.getElementById('clip-loop');
-    const clipPreviewBox = document.getElementById('clip-preview-box');
-    const clipPreviewCanvas = document.getElementById('clip-preview-canvas');
-    const clipPreviewCtx = clipPreviewCanvas ? clipPreviewCanvas.getContext('2d') : null;
-    if (clipPreviewCtx) clipPreviewCtx.imageSmoothingEnabled = false;
-
-    /** Find the named sprite at a grid position */
-    function findSpriteAtGrid(snapX, snapY) {
-      if (!currentSheet) return null;
-      const sheet = spritesheets[currentSheet];
-      if (!sheet || !sheet.sprites) return null;
-      for (const [name, sp] of Object.entries(sheet.sprites)) {
-        if (sp.x === snapX && sp.y === snapY) return name;
-      }
-      return null;
-    }
-
-    /** Add a frame to the current clip's frame list */
-    function addFrameToCurrentClip(spriteName) {
-      if (!currentClipName) return;
-      if (clipIsDirectional.checked) {
-        if (!clipDirectionalFrames[currentDirection]) {
-          clipDirectionalFrames[currentDirection] = [];
-        }
-        clipDirectionalFrames[currentDirection].push(spriteName);
-      } else {
-        clipFlatFrames.push(spriteName);
-      }
-      renderFrameStrip();
-      updateAnimPreview();
-      updateSectionHeight('animation-sets');
-
-      // Also add thumbnail to sticky toolbar strip during pick mode
-      if (pickFrameMode && pickToolbarStrip && currentSheet) {
-        const sheet = spritesheets[currentSheet];
-        const sprite = sheet && sheet.sprites[spriteName];
-        if (sprite) {
-          const wrapper = document.createElement('div');
-          wrapper.className = 'pick-toolbar-frame';
-          const c = document.createElement('canvas');
-          c.width = 24; c.height = 24;
-          const fCtx = c.getContext('2d');
-          fCtx.imageSmoothingEnabled = false;
-          const cachedImg = imageCache.get(sheet.imageUrl);
-          if (cachedImg && cachedImg.complete) {
-            fCtx.drawImage(cachedImg, sprite.x, sprite.y, sprite.w, sprite.h, 0, 0, 24, 24);
-          } else {
-            const img = new Image();
-            img.onload = () => {
-              imageCache.set(sheet.imageUrl, img);
-              fCtx.drawImage(img, sprite.x, sprite.y, sprite.w, sprite.h, 0, 0, 24, 24);
-            };
-            img.src = sheet.imageUrl;
-          }
-          wrapper.appendChild(c);
-          pickToolbarStrip.appendChild(wrapper);
-        }
-        updatePickFrameCount();
-      }
-    }
-
-    /** Update pick toolbar frame count */
-    function updatePickFrameCount() {
-      if (!pickFrameCount) return;
-      const frames = clipIsDirectional.checked
-        ? (clipDirectionalFrames[currentDirection] || [])
-        : clipFlatFrames;
-      pickFrameCount.textContent = frames.length + ' frame' + (frames.length !== 1 ? 's' : '');
-    }
-
-    /** Populate the set selector dropdown */
-    function renderAnimSetSelect() {
-      animSetSelect.innerHTML = '<option value="">-- select set --</option>';
-      for (const id of Object.keys(animSets)) {
-        const opt = document.createElement('option');
-        opt.value = id;
-        opt.textContent = id;
-        if (id === currentAnimSetId) opt.selected = true;
-        animSetSelect.appendChild(opt);
-      }
-    }
-
-    /** Render animation list for selected set */
-    function renderAnimClipList() {
-      if (!currentAnimSetId || !animSets[currentAnimSetId]) {
-        animSetList.innerHTML = '<div style="color:var(--pixel-muted);font-size:8px;text-align:center;padding:12px;">Select a set above</div>';
-        animClipEditor.style.display = 'none';
-        return;
-      }
-      const set = animSets[currentAnimSetId];
-      animSetSheetInfo.textContent = 'Sheet: ' + (set.spritesheet || '—');
-      const anims = set.animations || {};
-      animSetList.innerHTML = '';
-      for (const [name, clip] of Object.entries(anims)) {
-        const item = document.createElement('div');
-        item.className = 'anim-item' + (name === currentClipName ? ' selected' : '');
-
-        const left = document.createElement('span');
-        left.textContent = name;
-        item.appendChild(left);
-
-        const right = document.createElement('span');
-        if (clip.alias) {
-          right.className = 'anim-alias-badge';
-          right.textContent = '→ ' + clip.alias;
-        } else {
-          right.className = 'anim-meta-info';
-          const frameCount = clip.directions
-            ? Object.values(clip.directions).reduce((sum, d) => sum + (d.frames ? d.frames.length : 0), 0)
-            : (clip.frames ? clip.frames.length : 0);
-          right.textContent = frameCount + 'f @' + (clip.fps || 10) + 'fps';
-        }
-        item.appendChild(right);
-
-        item.addEventListener('click', () => loadClipEditor(name));
-        animSetList.appendChild(item);
-      }
-      updateSectionHeight('animation-sets');
-    }
-
-    /** Load clip data into editor */
-    function loadClipEditor(name) {
-      if (!currentAnimSetId || !animSets[currentAnimSetId]) return;
-      const set = animSets[currentAnimSetId];
-      const clip = set.animations[name];
-      if (!clip) return;
-
-      currentClipName = name;
-      editingClipOriginalName = name;
-      animClipEditor.style.display = 'block';
-      document.getElementById('clip-editor-title').textContent = 'Edit: ' + name;
-      clipNameInput.value = name;
-
-      // Alias
-      if (clip.alias) {
-        clipIsAlias.checked = true;
-        clipAliasSection.style.display = 'block';
-        clipFramesSection.style.display = 'none';
-        populateClipAliasTargets();
-        clipAliasTarget.value = clip.alias;
-      } else {
-        clipIsAlias.checked = false;
-        clipAliasSection.style.display = 'none';
-        clipFramesSection.style.display = 'block';
-      }
-
-      // Directional
-      if (clip.directions) {
-        clipIsDirectional.checked = true;
-        clipDirTabs.style.display = 'flex';
-        clipDirectionalFrames = {};
-        for (const [dir, d] of Object.entries(clip.directions)) {
-          clipDirectionalFrames[dir] = [...(d.frames || [])];
-        }
-        clipFlatFrames = [];
-      } else {
-        clipIsDirectional.checked = false;
-        clipDirTabs.style.display = 'none';
-        clipDirectionalFrames = {};
-        clipFlatFrames = clip.frames ? [...clip.frames] : [];
-      }
-
-      // FPS + loop
-      clipFpsSlider.value = clip.fps || 10;
-      clipFpsVal.textContent = clip.fps || 10;
-      clipLoop.checked = clip.loop !== false;
-
-      currentDirection = 'down';
-      updateDirTabActive();
-      renderFrameStrip();
-      updateAnimPreview();
-      renderAnimClipList();
-      updateSectionHeight('animation-sets');
-    }
-
-    /** Update direction tab active state */
-    function updateDirTabActive() {
-      document.querySelectorAll('#clip-dir-tabs .dir-tab').forEach(tab => {
-        tab.classList.toggle('active', tab.dataset.dir === currentDirection);
-      });
-    }
-
-    /** Render frame strip thumbnails */
-    function renderFrameStrip() {
-      if (!currentSheet) return;
-      const sheet = spritesheets[currentSheet];
-      if (!sheet) return;
-
-      const frames = clipIsDirectional.checked
-        ? (clipDirectionalFrames[currentDirection] || [])
-        : clipFlatFrames;
-
-      clipFrameStrip.innerHTML = '';
-
-      if (frames.length === 0) {
-        clipFrameStrip.innerHTML = '<div class="frame-strip-empty">No frames. Click "Pick from grid" then click sprites above.</div>';
-        return;
-      }
-
-      const drawFrame = (img, frameName, index) => {
-        const sprite = sheet.sprites[frameName];
-        if (!sprite) return;
-
-        const item = document.createElement('div');
-        item.className = 'frame-strip-item';
-
-        const c = document.createElement('canvas');
-        c.width = 28;
-        c.height = 28;
-        const fCtx = c.getContext('2d');
-        fCtx.imageSmoothingEnabled = false;
-        fCtx.drawImage(img, sprite.x, sprite.y, sprite.w, sprite.h, 0, 0, 28, 28);
-
-        const idx = document.createElement('div');
-        idx.className = 'frame-index';
-        idx.textContent = index;
-
-        const removeBtn = document.createElement('button');
-        removeBtn.className = 'frame-remove';
-        removeBtn.textContent = '×';
-        removeBtn.addEventListener('click', (e) => {
-          e.stopPropagation();
-          if (clipIsDirectional.checked) {
-            const arr = clipDirectionalFrames[currentDirection];
-            if (arr) arr.splice(index, 1);
-          } else {
-            clipFlatFrames.splice(index, 1);
-          }
-          renderFrameStrip();
-          updateAnimPreview();
-          updateSectionHeight('animation-sets');
-        });
-
-        item.appendChild(c);
-        item.appendChild(idx);
-        item.appendChild(removeBtn);
-        clipFrameStrip.appendChild(item);
-      };
-
-      const cachedImg = imageCache.get(sheet.imageUrl);
-      if (cachedImg && cachedImg.complete) {
-        frames.forEach((f, i) => drawFrame(cachedImg, f, i));
-      } else {
-        const img = new Image();
-        img.onload = () => {
-          imageCache.set(sheet.imageUrl, img);
-          frames.forEach((f, i) => drawFrame(img, f, i));
-        };
-        img.src = sheet.imageUrl;
-      }
-    }
-
-    /** Update animation preview */
-    function updateAnimPreview() {
-      if (animPreviewTimer) {
-        clearInterval(animPreviewTimer);
-        animPreviewTimer = null;
-      }
-      animPreviewFrame = 0;
-
-      if (!currentSheet || !clipPreviewCtx) return;
-      const sheet = spritesheets[currentSheet];
-      if (!sheet) return;
-
-      const frames = clipIsDirectional.checked
-        ? (clipDirectionalFrames[currentDirection] || [])
-        : clipFlatFrames;
-
-      if (frames.length === 0) {
-        clipPreviewBox.style.display = 'none';
-        return;
-      }
-      clipPreviewBox.style.display = 'flex';
-
-      const fps = parseInt(clipFpsSlider.value) || 10;
-      const loop = clipLoop.checked;
-
-      const drawPreviewFrame = (img) => {
-        const frameName = frames[animPreviewFrame];
-        const sprite = sheet.sprites[frameName];
-        clipPreviewCtx.clearRect(0, 0, 64, 64);
-        if (sprite) {
-          clipPreviewCtx.drawImage(img, sprite.x, sprite.y, sprite.w, sprite.h, 0, 0, 64, 64);
-        }
-      };
-
-      const startPreview = (img) => {
-        drawPreviewFrame(img);
-        if (frames.length > 1) {
-          animPreviewTimer = setInterval(() => {
-            animPreviewFrame++;
-            if (animPreviewFrame >= frames.length) {
-              if (loop) {
-                animPreviewFrame = 0;
-              } else {
-                animPreviewFrame = frames.length - 1;
-                clearInterval(animPreviewTimer);
-                animPreviewTimer = null;
-                return;
-              }
-            }
-            drawPreviewFrame(img);
-          }, 1000 / fps);
-        }
-      };
-
-      const cachedImg = imageCache.get(sheet.imageUrl);
-      if (cachedImg && cachedImg.complete) {
-        startPreview(cachedImg);
-      } else {
-        const img = new Image();
-        img.onload = () => {
-          imageCache.set(sheet.imageUrl, img);
-          startPreview(img);
-        };
-        img.src = sheet.imageUrl;
-      }
-    }
-
-    /** Populate alias target dropdown */
-    function populateClipAliasTargets() {
-      if (!currentAnimSetId || !animSets[currentAnimSetId]) return;
-      const anims = animSets[currentAnimSetId].animations || {};
-      clipAliasTarget.innerHTML = '<option value="">-- select --</option>';
-      for (const name of Object.keys(anims)) {
-        if (name === currentClipName) continue;
-        const opt = document.createElement('option');
-        opt.value = name;
-        opt.textContent = name;
-        clipAliasTarget.appendChild(opt);
-      }
-    }
-
-    /** Show/hide animation sets section, auto-link spritesheet */
-    function updateAnimationSetsSection() {
-      if (!animSetWrapper) return;
-      // Always show if we have animation sets data
-      if (Object.keys(animSets).length === 0) {
-        animSetWrapper.style.display = 'none';
-        return;
-      }
-      animSetWrapper.style.display = 'block';
-
-      // Auto-select set matching current spritesheet
-      if (currentSheet) {
-        for (const [id, set] of Object.entries(animSets)) {
-          if (set.spritesheet === currentSheet) {
-            if (currentAnimSetId !== id) {
-              currentAnimSetId = id;
-              currentClipName = null;
-              animClipEditor.style.display = 'none';
-              renderAnimSetSelect();
-              renderAnimClipList();
-            }
-            return;
-          }
-        }
-      }
-      // No matching set — keep current or clear
-      renderAnimSetSelect();
-      renderAnimClipList();
-      updateSectionHeight('animation-sets');
-    }
-
-    /** Enter pick-frame mode */
-    function enterPickMode() {
-      pickFrameMode = true;
-      document.body.classList.add('pick-mode-active');
-      if (pickToolbar) pickToolbar.classList.add('active');
-      if (pickToolbarStrip) pickToolbarStrip.innerHTML = '';
-      const pickBtn = document.getElementById('btn-pick-frames');
-      if (pickBtn) pickBtn.textContent = 'Picking...';
-      updatePickFrameCount();
-      updateSectionHeight('animation-sets');
-
-      // Ensure Sprite Viewer is expanded so user has something to click
-      if (collapsedSections.has('sprite-viewer')) {
-        const title = document.querySelector('.section-title[data-section="sprite-viewer"]');
-        const content = document.querySelector('.section-content[data-section="sprite-viewer"]');
-        if (title && content) {
-          const height = measureContentHeight(content);
-          title.classList.remove('collapsed');
-          content.classList.remove('collapsed');
-          content.style.maxHeight = height + 'px';
-          collapsedSections.delete('sprite-viewer');
-        }
-      }
-    }
-
-    /** Exit pick-frame mode */
-    function exitPickMode() {
-      pickFrameMode = false;
-      document.body.classList.remove('pick-mode-active');
-      if (pickToolbar) pickToolbar.classList.remove('active');
-      if (pickToolbarStrip) pickToolbarStrip.innerHTML = '';
-      const pickBtn = document.getElementById('btn-pick-frames');
-      if (pickBtn) pickBtn.textContent = 'Pick from grid';
-      updateSectionHeight('animation-sets');
-    }
-
-    /** Save the current clip back to the animation set */
-    function saveCurrentClip() {
-      if (!currentAnimSetId || !currentClipName) return;
-      const set = animSets[currentAnimSetId];
-      if (!set) return;
-
-      const newName = clipNameInput.value.trim();
-      if (!newName) return;
-
-      // Build clip definition
-      let clipDef = {};
-      if (clipIsAlias.checked) {
-        const target = clipAliasTarget.value;
-        if (target) clipDef.alias = target;
-      } else {
-        if (clipIsDirectional.checked) {
-          clipDef.directions = {};
-          for (const dir of ['down', 'up', 'left', 'right']) {
-            clipDef.directions[dir] = { frames: clipDirectionalFrames[dir] || [] };
-          }
-        } else {
-          clipDef.frames = [...clipFlatFrames];
-        }
-        clipDef.fps = parseInt(clipFpsSlider.value) || 10;
-        clipDef.loop = clipLoop.checked;
-      }
-
-      // Handle rename
-      if (editingClipOriginalName && editingClipOriginalName !== newName) {
-        delete set.animations[editingClipOriginalName];
-      }
-      set.animations[newName] = clipDef;
-
-      currentClipName = newName;
-      editingClipOriginalName = newName;
-      renderAnimClipList();
-      updateSectionHeight('animation-sets');
-    }
-
-    // ─── Animation Sets Event Handlers ──────────────────────────────────
-
-    // Set selector change
-    animSetSelect.addEventListener('change', () => {
-      const id = animSetSelect.value;
-      if (!id) {
-        currentAnimSetId = null;
-        currentClipName = null;
-        animClipEditor.style.display = 'none';
-        renderAnimClipList();
-        return;
-      }
-      currentAnimSetId = id;
-      currentClipName = null;
-      animClipEditor.style.display = 'none';
-
-      // Auto-switch to referenced spritesheet
-      const set = animSets[id];
-      if (set && set.spritesheet && spritesheets[set.spritesheet]) {
-        if (currentSheet !== set.spritesheet) {
-          selectSpritesheet(set.spritesheet);
-        }
-      }
-      renderAnimClipList();
-    });
-
-    // New set button
-    document.getElementById('btn-new-anim-set').addEventListener('click', () => {
-      const id = prompt('Animation set ID (e.g., chicken, main-agent):');
-      if (!id || !id.trim()) return;
-      const setId = id.trim().toLowerCase().replace(/[^a-z0-9-]/g, '-');
-      vscode.postMessage({
-        type: 'createAnimationSet',
-        data: { id: setId, spritesheet: currentSheet || '' }
-      });
-    });
-
-    // Delete set button
-    document.getElementById('btn-delete-anim-set').addEventListener('click', () => {
-      if (!currentAnimSetId) return;
-      if (!confirm('Delete animation set "' + currentAnimSetId + '"?')) return;
-      vscode.postMessage({
-        type: 'deleteAnimationSet',
-        data: { id: currentAnimSetId }
-      });
-      currentAnimSetId = null;
-      currentClipName = null;
-      animClipEditor.style.display = 'none';
-    });
-
-    // Add clip button
-    document.getElementById('btn-add-anim-clip').addEventListener('click', () => {
-      if (!currentAnimSetId || !animSets[currentAnimSetId]) return;
-      const name = prompt('Animation name (e.g., idle, walk, attack):');
-      if (!name || !name.trim()) return;
-      const clipName = name.trim().toLowerCase().replace(/[^a-z0-9-]/g, '-');
-      const set = animSets[currentAnimSetId];
-      if (set.animations[clipName]) {
-        alert('Animation "' + clipName + '" already exists.');
-        return;
-      }
-      set.animations[clipName] = { frames: [], fps: 10, loop: true };
-      renderAnimClipList();
-      loadClipEditor(clipName);
-    });
-
-    // Delete clip button
-    document.getElementById('btn-delete-clip').addEventListener('click', () => {
-      if (!currentAnimSetId || !currentClipName) return;
-      const set = animSets[currentAnimSetId];
-      if (!set) return;
-      if (!confirm('Delete animation "' + currentClipName + '"?')) return;
-      delete set.animations[currentClipName];
-      currentClipName = null;
-      animClipEditor.style.display = 'none';
-      exitPickMode();
-      renderAnimClipList();
-    });
-
-    // Pick mode toggle
-    document.getElementById('btn-pick-frames').addEventListener('click', () => {
-      if (pickFrameMode) {
-        exitPickMode();
-      } else {
-        enterPickMode();
-      }
-    });
-
-    // Done button in sticky toolbar
-    document.getElementById('btn-pick-done').addEventListener('click', () => {
-      exitPickMode();
-    });
-
-    // Alias checkbox toggle
-    clipIsAlias.addEventListener('change', () => {
-      if (clipIsAlias.checked) {
-        clipAliasSection.style.display = 'block';
-        clipFramesSection.style.display = 'none';
-        populateClipAliasTargets();
-        exitPickMode();
-      } else {
-        clipAliasSection.style.display = 'none';
-        clipFramesSection.style.display = 'block';
-      }
-      updateSectionHeight('animation-sets');
-    });
-
-    // Directional checkbox toggle
-    clipIsDirectional.addEventListener('change', () => {
-      if (clipIsDirectional.checked) {
-        clipDirTabs.style.display = 'flex';
-        // Copy flat frames to current direction if transitioning
-        if (clipFlatFrames.length > 0 && (!clipDirectionalFrames[currentDirection] || clipDirectionalFrames[currentDirection].length === 0)) {
-          clipDirectionalFrames[currentDirection] = [...clipFlatFrames];
-        }
-      } else {
-        clipDirTabs.style.display = 'none';
-        // Copy current direction frames to flat if transitioning
-        if (clipDirectionalFrames[currentDirection] && clipDirectionalFrames[currentDirection].length > 0 && clipFlatFrames.length === 0) {
-          clipFlatFrames = [...clipDirectionalFrames[currentDirection]];
-        }
-      }
-      renderFrameStrip();
-      updateAnimPreview();
-      updateSectionHeight('animation-sets');
-    });
-
-    // Direction tabs
-    document.querySelectorAll('#clip-dir-tabs .dir-tab').forEach(tab => {
-      tab.addEventListener('click', () => {
-        currentDirection = tab.dataset.dir;
-        updateDirTabActive();
-        renderFrameStrip();
-        updateAnimPreview();
-      });
-    });
-
-    // FPS slider
-    clipFpsSlider.addEventListener('input', () => {
-      clipFpsVal.textContent = clipFpsSlider.value;
-      updateAnimPreview();
-    });
-
-    // Loop checkbox
-    clipLoop.addEventListener('change', () => {
-      updateAnimPreview();
-    });
-
-    // Save clip button
-    document.getElementById('btn-save-clip').addEventListener('click', () => {
-      saveCurrentClip();
-    });
-
-    // Save all changes button
-    document.getElementById('btn-save-anim-set').addEventListener('click', () => {
-      if (!currentAnimSetId || !animSets[currentAnimSetId]) return;
-      // Save current clip first if editing
-      if (currentClipName) saveCurrentClip();
-      vscode.postMessage({
-        type: 'saveAnimationSet',
-        data: { id: currentAnimSetId, set: animSets[currentAnimSetId] }
-      });
-    });
-
-    // Request animation sets on load
-    vscode.postMessage({ type: 'loadAnimationSets' });
-
     // ─── Message Handling ─────────────────────────────────────────────────
+    /* All animation code removed — see AnimationEditorPanel */
 
     window.addEventListener('message', async event => {
       const message = event.data;
@@ -3531,7 +2222,6 @@ export class SpriteConfigPanel implements vscode.WebviewViewProvider {
         const previousSheet = currentSheet;
 
         spritesheets = message.assets.spritesheets;
-        spriteMappings = message.assets.spriteMappings || {};
         renderSpritesheetList();
 
         // Re-select the previous sheet if it exists, otherwise select first
@@ -3545,11 +2235,6 @@ export class SpriteConfigPanel implements vscode.WebviewViewProvider {
         }
       }
 
-      if (message.type === 'loadAnimationSets' && message.sets) {
-        animSets = message.sets;
-        renderAnimSetSelect();
-        updateAnimationSetsSection();
-      }
     });
 
     // Signal ready

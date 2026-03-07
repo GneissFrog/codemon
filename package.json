@@ -55,7 +55,7 @@
       "activitybar": [
         {
           "id": "codemon-sprites",
-          "title": "CodeMon Sprites",
+          "title": "CodeMon Tools",
           "icon": "assets/icons/codemon-icon.svg"
         }
       ]
@@ -65,7 +65,12 @@
         {
           "type": "webview",
           "id": "codemon.spriteConfig",
-          "name": "Sprite Configuration"
+          "name": "Sprite Browser"
+        },
+        {
+          "type": "webview",
+          "id": "codemon.animationEditor",
+          "name": "Animation Editor"
         },
         {
           "type": "webview",
@@ -81,6 +86,11 @@
           "type": "webview",
           "id": "codemon.stateMachineEditor",
           "name": "State Machines"
+        },
+        {
+          "type": "webview",
+          "id": "codemon.gameViewSettings",
+          "name": "Game View Settings"
         }
       ]
     },

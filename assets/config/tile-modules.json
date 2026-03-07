@@ -1,10 +1,18 @@
 {
-  "version": 1,
+  "version": 2,
+  "categoryBudgets": {
+    "landmark":    { "base": 3000, "max": 2 },
+    "environment": { "base": 500 },
+    "connector":   { "perPath": 3 },
+    "decorative":  { "base": 200 },
+    "vegetation":  { "base": 50 }
+  },
   "modules": [
     {
       "id": "mushroom-fairy-ring",
       "name": "Mushroom Fairy Ring",
       "category": "decorative",
+      "weight": 1.0,
       "width": 5,
       "height": 5,
       "tiles": [
@@ -13,63 +21,81 @@
           "y": 0,
           "layer": 2,
           "type": "decoration",
-          "spriteId": "biome/mushroom-red"
+          "spriteId": "biome/mushroom-red",
+          "variants": ["biome/mushroom-red", "biome/mushroom-brown"],
+          "swapGroup": "ring"
         },
         {
           "x": 3,
           "y": 0,
           "layer": 2,
           "type": "decoration",
-          "spriteId": "biome/mushroom-brown"
+          "spriteId": "biome/mushroom-brown",
+          "variants": ["biome/mushroom-red", "biome/mushroom-brown"],
+          "swapGroup": "ring"
         },
         {
           "x": 0,
           "y": 1,
           "layer": 2,
           "type": "decoration",
-          "spriteId": "biome/mushroom-brown"
+          "spriteId": "biome/mushroom-brown",
+          "variants": ["biome/mushroom-red", "biome/mushroom-brown"],
+          "swapGroup": "ring"
         },
         {
           "x": 4,
           "y": 1,
           "layer": 2,
           "type": "decoration",
-          "spriteId": "biome/mushroom-red"
+          "spriteId": "biome/mushroom-red",
+          "variants": ["biome/mushroom-red", "biome/mushroom-brown"],
+          "swapGroup": "ring"
         },
         {
           "x": 2,
           "y": 2,
           "layer": 2,
           "type": "decoration",
-          "spriteId": "biome/rock-small"
+          "spriteId": "biome/flower-red",
+          "stateMachineId": "flower-cycle"
         },
         {
           "x": 0,
           "y": 3,
           "layer": 2,
           "type": "decoration",
-          "spriteId": "biome/mushroom-red"
+          "spriteId": "biome/mushroom-red",
+          "variants": ["biome/mushroom-red", "biome/mushroom-brown"],
+          "swapGroup": "ring",
+          "stateMachineId": "mushroom-swap"
         },
         {
           "x": 4,
           "y": 3,
           "layer": 2,
           "type": "decoration",
-          "spriteId": "biome/mushroom-brown"
+          "spriteId": "biome/mushroom-brown",
+          "variants": ["biome/mushroom-red", "biome/mushroom-brown"],
+          "swapGroup": "ring"
         },
         {
           "x": 1,
           "y": 4,
           "layer": 2,
           "type": "decoration",
-          "spriteId": "biome/mushroom-brown"
+          "spriteId": "biome/mushroom-brown",
+          "variants": ["biome/mushroom-red", "biome/mushroom-brown"],
+          "swapGroup": "ring"
         },
         {
           "x": 3,
           "y": 4,
           "layer": 2,
           "type": "decoration",
-          "spriteId": "biome/mushroom-red"
+          "spriteId": "biome/mushroom-red",
+          "variants": ["biome/mushroom-red", "biome/mushroom-brown"],
+          "swapGroup": "ring"
         }
       ],
       "connectionPoints": [],
@@ -95,6 +121,7 @@
       "id": "stone-circle",
       "name": "Stone Circle",
       "category": "decorative",
+      "weight": 0.8,
       "width": 5,
       "height": 5,
       "tiles": [
@@ -191,6 +218,7 @@
       "id": "flower-garden-small",
       "name": "Small Flower Garden",
       "category": "decorative",
+      "weight": 1.2,
       "width": 4,
       "height": 4,
       "tiles": [
@@ -331,6 +359,7 @@
       "id": "pond-lily-small",
       "name": "Small Lily Pond",
       "category": "environment",
+      "weight": 1.0,
       "width": 6,
       "height": 5,
       "tiles": [
@@ -527,6 +556,7 @@
       "id": "berry-patch",
       "name": "Berry Patch",
       "category": "decorative",
+      "weight": 1.0,
       "width": 4,
       "height": 4,
       "tiles": [
@@ -618,6 +648,7 @@
       "id": "testid",
       "name": "tesname",
       "category": "decorative",
+      "weight": 1.0,
       "width": 5,
       "height": 5,
       "tiles": [
@@ -774,6 +805,7 @@
       "id": "wood-bridge-ns",
       "name": "Wood Bridge (N-S)",
       "category": "connector",
+      "weight": 1.5,
       "width": 1,
       "height": 3,
       "tiles": [
@@ -836,6 +868,7 @@
       "id": "wood-bridge-ew",
       "name": "Wood Bridge (E-W)",
       "category": "connector",
+      "weight": 1.5,
       "width": 3,
       "height": 1,
       "tiles": [
@@ -898,6 +931,7 @@
       "id": "wood-bridge-long-ns",
       "name": "Long Wood Bridge (N-S)",
       "category": "connector",
+      "weight": 0.8,
       "width": 1,
       "height": 5,
       "tiles": [
@@ -974,6 +1008,7 @@
       "id": "wood-bridge-long-ew",
       "name": "Long Wood Bridge (E-W)",
       "category": "connector",
+      "weight": 0.8,
       "width": 5,
       "height": 1,
       "tiles": [

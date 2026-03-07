@@ -111,6 +111,14 @@ export async function initGameView(options: {
     const now = performance.now();
     engine.update(deltaTime * 16.67, now, animFrame, engine.state.worldWidth, engine.state.worldHeight); // Convert to ms equivalent
 
+    // Apply state-machine-driven tile sprite changes
+    const dirtyTiles = engine.getDirtyTileSMs();
+    if (dirtyTiles.size > 0) {
+      for (const [key, newSpriteId] of dirtyTiles) {
+        (renderer as PhaserRenderer).updateTileSprite(key, newSpriteId);
+      }
+    }
+
     // Update agent animation frame
     if (animFrame % 15 === 0) {
       const agent = engine.state.agent;

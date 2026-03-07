@@ -26,8 +26,6 @@ export interface SpritesheetDef {
   sprites: Record<string, SpriteDef | { comment: string }>;
   normalMap?: string;      // Optional: path to normal map image (auto-detected via _n suffix)
   aseprite?: AsepriteConfig;  // Optional: Aseprite JSON export for auto-animation
-  isCharacter?: boolean;   // Optional: mark as character spritesheet
-  characterConfig?: CharacterConfig | LegacyCharacterConfig;  // Character animation config
   /** Mark as terrain tileset — sprites auto-generated from grid as t_col_row */
   terrainTileset?: boolean;
 }
@@ -74,25 +72,10 @@ export interface CropDef {
   growthRate: 'activity' | 'tokens' | 'time';
 }
 
-// Sprite purpose types - what a spritesheet can be used for
-export type SpritePurpose =
-  | 'character'      // Player character
-  | 'chicken'        // Chicken NPC
-  | 'cow'            // Cow NPC
-  | 'grass'          // Grass tiles
-  | 'tilled-dirt'    // Tilled dirt tiles
-  | 'fences'         // Fence objects
-  | 'water'          // Water tiles
-  | 'plants'         // Plant/crop objects
-  | 'biome'          // Biome decorations
-  | 'paths'          // Path tiles
-  | 'custom';        // Custom purpose
-
 export interface SpriteManifest {
   version: number;
   description: string;
   tileSize: number;
-  spriteMappings: Record<string, string>;  // purpose -> sheetName
   spritesheets: Record<string, SpritesheetDef>;
   animations: Record<string, AnimationDef>;
   crops: Record<string, CropDef>;
@@ -169,6 +152,7 @@ export interface Tile {
   spriteId: string;
   variant: number;
   layer: number;  // 0=ground, 1=terrain, 2=crops/objects
+  stateMachineId?: string;  // References a StateMachineConfig id for runtime state transitions
 }
 
 /**
@@ -220,6 +204,9 @@ export interface ModuleTilePlacement {
   layer: number;      // 0=ground, 1=terrain, 2=objects/crops
   type: TileType;
   spriteId: string;
+  variants?: string[];    // Alternative spriteIds; one chosen per instance
+  swapGroup?: string;     // Named group for position shuffling across instances
+  stateMachineId?: string;  // State machine id for runtime visual state transitions
 }
 
 export interface ConnectionPoint {
@@ -251,7 +238,8 @@ export interface TileModuleDef {
   connectionPoints: ConnectionPoint[];
   placement: PlacementRules;
   tags: string[];
-  rarity: number;          // 0.0-1.0, probability weight
+  rarity: number;          // 0.0-1.0, probability gate
+  weight: number;          // Relative selection weight within category (default 1.0)
   minWorldArea: number;    // Minimum world area (tiles^2) to appear
   maxInstances: number;    // Maximum copies per world (-1 = unlimited)
 }
@@ -261,6 +249,8 @@ export interface AsciiLegendEntry {
   type: TileType;
   spriteId: string;
   layer?: number;          // Default: 2 (objects) for single-layer maps
+  variants?: string[];     // Alternative spriteIds for content shuffling
+  swapGroup?: string;      // Position shuffle group name
 }
 
 /** Single-layer ASCII module format */
@@ -274,6 +264,7 @@ export interface AsciiModuleFormat {
   placement?: Partial<PlacementRules>;
   tags?: string[];
   rarity?: number;
+  weight?: number;
   minWorldArea?: number;
   maxInstances?: number;
 }
@@ -294,8 +285,17 @@ export interface MultiLayerAsciiModuleFormat {
   placement?: Partial<PlacementRules>;
   tags?: string[];
   rarity?: number;
+  weight?: number;
   minWorldArea?: number;
   maxInstances?: number;
+}
+
+/** Per-category budget configuration for module placement */
+export interface CategoryBudgetConfig {
+  base?: number;       // Budget = floor(worldArea / base)
+  perPath?: number;    // Budget = floor(pathCount / perPath)
+  max?: number;        // Hard cap
+  min?: number;        // Minimum (for small worlds)
 }
 
 /** Record of a module that was placed in the world */
@@ -443,38 +443,3 @@ export interface TileConfig {
 
 // ─── Character Action Types ────────────────────────────────────────────────
 
-/** Predefined Claude skills/tools that can be mapped to sprite actions */
-export type ClaudeSkill =
-  | 'read'
-  | 'write'
-  | 'edit'
-  | 'bash'
-  | 'grep'
-  | 'glob'
-  | 'search'
-  | 'webSearch'
-  | 'webFetch'
-  | 'agent'
-  | 'custom';
-
-/** Configuration for a single character action */
-export interface ActionConfig {
-  name: string;              // Action identifier (e.g., "hoe", "read", "walk")
-  frames: number;            // Number of animation frames for this action
-  skill?: ClaudeSkill;       // Optional: mapped Claude skill
-  customSkillName?: string;  // If skill is 'custom', store the custom name
-}
-
-/** Character spritesheet configuration with per-action settings */
-export interface CharacterConfig {
-  directions: string[];      // Available directions: ["down", "up", "left", "right"]
-  actions: ActionConfig[];   // Action configurations with per-action frames
-  framesPerAction?: number;  // DEPRECATED: kept for migration from legacy format
-}
-
-/** Legacy character config format (for migration) */
-export interface LegacyCharacterConfig {
-  directions: string[];
-  actions: string[];         // Old format: array of action names
-  framesPerAction: number;   // Old format: global frame count
-}

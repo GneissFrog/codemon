@@ -51,6 +51,9 @@ export class ModuleEditorPanel implements vscode.WebviewViewProvider {
         case 'deleteModule':
           await this._deleteModule((message.data as { id: string }).id);
           break;
+        case 'saveWeights':
+          await this._saveWeights(message.data as Record<string, number>);
+          break;
       }
     });
   }
@@ -92,6 +95,27 @@ export class ModuleEditorPanel implements vscode.WebviewViewProvider {
     } catch (error) {
       console.error('[ModuleEditor] Failed to save module:', error);
       vscode.window.showErrorMessage(`Failed to save module: ${error}`);
+    }
+  }
+
+  private async _saveWeights(updates: Record<string, number>): Promise<void> {
+    try {
+      const registry = getModuleRegistry(this._extensionUri);
+      let changed = 0;
+      for (const [moduleId, weight] of Object.entries(updates)) {
+        const mod = registry.get(moduleId);
+        if (mod) {
+          mod.weight = weight;
+          changed++;
+        }
+      }
+      if (changed > 0) {
+        await registry.save();
+        vscode.window.showInformationMessage(`Updated weights for ${changed} module(s)`);
+      }
+    } catch (error) {
+      console.error('[ModuleEditor] Failed to save weights:', error);
+      vscode.window.showErrorMessage(`Failed to save weights: ${error}`);
     }
   }
 
@@ -216,6 +240,37 @@ export class ModuleEditorPanel implements vscode.WebviewViewProvider {
       padding: 20px; font-size: 11px;
     }
 
+    /* ─── Category Weights ─── */
+    .cat-weight-row {
+      display: flex; align-items: center; gap: 4px;
+      padding: 3px 4px; font-size: 9px;
+      border-bottom: 1px solid var(--pixel-border);
+    }
+    .cat-weight-row:last-child { border-bottom: none; }
+    .cat-weight-row.current { background: var(--pixel-bg-light); }
+    .cat-weight-row .cw-name {
+      flex: 1; overflow: hidden; text-overflow: ellipsis;
+      white-space: nowrap; cursor: pointer;
+    }
+    .cat-weight-row .cw-name:hover { color: var(--pixel-accent); }
+    .cat-weight-row.current .cw-name { color: var(--pixel-success); font-weight: bold; }
+    .cat-weight-row input[type="number"] {
+      width: 38px; font-family: inherit; font-size: 9px;
+      background: var(--pixel-bg-light); color: var(--pixel-fg);
+      border: 1px solid var(--pixel-border); padding: 1px 2px;
+      text-align: right;
+    }
+    .cat-weight-row .cw-pct {
+      min-width: 30px; text-align: right; color: var(--pixel-accent);
+    }
+    .cat-weight-row .cw-bar {
+      width: 40px; height: 6px; background: var(--pixel-bg);
+      border: 1px solid var(--pixel-border); position: relative;
+    }
+    .cat-weight-row .cw-bar-fill {
+      height: 100%; background: var(--pixel-accent);
+    }
+
     /* ─── Placed Tiles List ─── */
     .tile-list-container {
       max-height: 200px; overflow-y: auto;
@@ -259,6 +314,47 @@ export class ModuleEditorPanel implements vscode.WebviewViewProvider {
       text-align: center; color: var(--pixel-muted);
       padding: 8px; font-size: 9px;
     }
+
+    /* ─── Content Shuffling ─── */
+    .shuffle-summary {
+      font-size: 9px; padding: 4px 6px;
+      color: var(--pixel-muted); line-height: 1.6;
+    }
+    .shuffle-summary strong { color: var(--pixel-fg); }
+    .swap-group-tag {
+      display: inline-flex; align-items: center; gap: 3px;
+      padding: 1px 6px; margin: 1px 2px;
+      background: var(--pixel-bg-light); border: 1px solid var(--pixel-border);
+      border-radius: 2px; font-size: 8px; cursor: pointer;
+    }
+    .swap-group-tag:hover { border-color: var(--pixel-accent); }
+    .swap-group-tag .sg-count { color: var(--pixel-accent); }
+    .shuffle-bulk-row {
+      display: flex; align-items: center; gap: 4px;
+      padding: 3px 0; font-size: 9px;
+    }
+    .shuffle-bulk-row input, .shuffle-bulk-row select {
+      font-family: inherit; font-size: 9px;
+      background: var(--pixel-bg-light); color: var(--pixel-fg);
+      border: 1px solid var(--pixel-border); padding: 1px 3px;
+    }
+    .shuffle-bulk-row button {
+      font-family: inherit; font-size: 9px;
+      background: var(--pixel-bg-light); color: var(--pixel-fg);
+      border: 1px solid var(--pixel-border); padding: 1px 6px;
+      cursor: pointer;
+    }
+    .shuffle-bulk-row button:hover { background: var(--pixel-accent); color: #000; }
+    .variant-tile-entry {
+      display: flex; align-items: center; gap: 4px;
+      padding: 2px 4px; font-size: 8px;
+      border-bottom: 1px solid var(--pixel-border);
+      cursor: pointer;
+    }
+    .variant-tile-entry:hover { background: var(--pixel-bg-light); }
+    .variant-tile-entry:last-child { border-bottom: none; }
+    .variant-tile-entry .vt-pos { color: var(--pixel-muted); min-width: 28px; }
+    .variant-tile-entry .vt-sprites { flex: 1; color: var(--pixel-accent); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
     /* ─── Hover Tooltip ─── */
     #hover-info {
@@ -341,6 +437,37 @@ export class ModuleEditorPanel implements vscode.WebviewViewProvider {
       <div id="tile-list"></div>
     </div>
 
+    <!-- Content Shuffling -->
+    <div class="section-label">Content Shuffling</div>
+    <div id="shuffle-section">
+      <div id="shuffle-summary" class="shuffle-summary">No tiles placed</div>
+      <div id="swap-groups-display" style="margin:3px 0;"></div>
+      <div id="variant-tiles-display" style="max-height:100px;overflow-y:auto;border:1px solid var(--pixel-border);margin:3px 0;display:none;"></div>
+      <div class="shuffle-bulk-row">
+        <input id="bulk-swap-group" type="text" placeholder="group name" style="flex:1;">
+        <button id="btn-assign-swap" title="Assign swap group to all object-layer tiles">Apply L2</button>
+        <button id="btn-clear-swap" title="Clear all swap groups">Clear</button>
+      </div>
+    </div>
+
+    <!-- Tile Properties (shown when a tile is selected) -->
+    <div id="tile-props" style="display:none;">
+      <div class="section-label">Tile Properties <span id="tile-props-pos" style="color:var(--pixel-muted);"></span></div>
+      <div class="prop-row">
+        <label>Variants:</label>
+        <input id="tile-variants" type="text" placeholder="sheet/sprite1, sheet/sprite2" style="flex:1;font-size:9px;">
+      </div>
+      <div style="font-size:8px;color:var(--pixel-muted);margin:0 0 2px 64px;">Comma-separated sprite IDs (includes default)</div>
+      <div class="prop-row">
+        <label>Swap Group:</label>
+        <input id="tile-swap-group" type="text" placeholder="e.g. ring, cluster" style="flex:1;font-size:9px;">
+      </div>
+      <div class="prop-row">
+        <button id="tile-props-apply" style="font-size:9px;padding:2px 8px;">Apply</button>
+        <button id="tile-props-close" style="font-size:9px;padding:2px 8px;">Close</button>
+      </div>
+    </div>
+
     <!-- Properties -->
     <div class="section-label">Properties</div>
     <div class="prop-row">
@@ -410,6 +537,14 @@ export class ModuleEditorPanel implements vscode.WebviewViewProvider {
     <div id="conn-list">
       <div class="empty-state" style="font-size:9px; padding:4px;">Click edge tiles on the canvas to add connection points</div>
     </div>
+
+    <!-- Category Weights -->
+    <div class="section-label">Category Weights <span id="cat-weight-category" style="color:var(--pixel-muted);"></span></div>
+    <div id="cat-weights-list" style="border:1px solid var(--pixel-border);margin-bottom:6px;max-height:180px;overflow-y:auto;"></div>
+    <div style="display:flex;gap:4px;">
+      <button id="btn-save-weights" style="font-size:9px;padding:2px 8px;font-family:inherit;background:var(--pixel-bg-light);color:var(--pixel-fg);border:1px solid var(--pixel-border);cursor:pointer;">Save Weights</button>
+      <button id="btn-normalize-weights" style="font-size:9px;padding:2px 8px;font-family:inherit;background:var(--pixel-bg-light);color:var(--pixel-fg);border:1px solid var(--pixel-border);cursor:pointer;">Normalize to 1.0</button>
+    </div>
   </div>
 
   <div id="hover-info"></div>
@@ -432,9 +567,12 @@ export class ModuleEditorPanel implements vscode.WebviewViewProvider {
     let selectedSpriteId = null; // e.g. "biome/mushroom-red"
     let selectedTileType = 'decoration';
 
-    // Module tile data: Map<"x,y,layer" -> {type, spriteId}>
+    // Module tile data: Map<"x,y,layer" -> {type, spriteId, variants?, swapGroup?}>
     let moduleTiles = new Map();
     let connectionPoints = [];
+
+    // Category weight edits: moduleId -> weight (pending save)
+    const weightEdits = new Map();
 
     const canvas = document.getElementById('module-canvas');
     const ctx = canvas.getContext('2d');
@@ -465,7 +603,6 @@ export class ModuleEditorPanel implements vscode.WebviewViewProvider {
     function initPalette() {
       sheetSelect.innerHTML = '';
       for (const name of Object.keys(spritesheets)) {
-        if (spritesheets[name].isCharacter) continue; // Skip character sheets
         const opt = document.createElement('option');
         opt.value = name;
         opt.textContent = name;
@@ -586,15 +723,21 @@ export class ModuleEditorPanel implements vscode.WebviewViewProvider {
       document.getElementById('grid-height').value = gridHeight;
 
       for (const t of (mod.tiles || [])) {
-        moduleTiles.set(t.x + ',' + t.y + ',' + t.layer, { type: t.type, spriteId: t.spriteId });
+        const tileData = { type: t.type, spriteId: t.spriteId };
+        if (t.variants && t.variants.length > 0) tileData.variants = t.variants;
+        if (t.swapGroup) tileData.swapGroup = t.swapGroup;
+        moduleTiles.set(t.x + ',' + t.y + ',' + t.layer, tileData);
       }
 
       connectionPoints = (mod.connectionPoints || []).slice();
+      weightEdits.clear();
       updateSizeLabel();
       resizeCanvas();
       renderCanvas();
       renderTileList();
       renderConnectionList();
+      renderCategoryWeights();
+      renderShuffleSection();
     }
 
     function newModule() {
@@ -620,11 +763,14 @@ export class ModuleEditorPanel implements vscode.WebviewViewProvider {
       gridHeight = 5;
       document.getElementById('grid-width').value = 5;
       document.getElementById('grid-height').value = 5;
+      weightEdits.clear();
       updateSizeLabel();
       resizeCanvas();
       renderCanvas();
       renderTileList();
       renderConnectionList();
+      renderCategoryWeights();
+      renderShuffleSection();
     }
 
     // ─── Grid Size ─────────────────────────────────────────────────────
@@ -684,6 +830,7 @@ export class ModuleEditorPanel implements vscode.WebviewViewProvider {
         keysToDelete.forEach(k => moduleTiles.delete(k));
         renderCanvas();
         renderTileList();
+        renderShuffleSection();
       });
     });
 
@@ -795,6 +942,7 @@ export class ModuleEditorPanel implements vscode.WebviewViewProvider {
       moduleTiles.set(key, { type: selectedTileType, spriteId: selectedSpriteId });
       renderCanvas();
       renderTileList();
+      renderShuffleSection();
     });
 
     canvas.addEventListener('contextmenu', (e) => {
@@ -806,6 +954,7 @@ export class ModuleEditorPanel implements vscode.WebviewViewProvider {
       moduleTiles.delete(key);
       renderCanvas();
       renderTileList();
+      renderShuffleSection();
     });
 
     // Hover info
@@ -870,10 +1019,15 @@ export class ModuleEditorPanel implements vscode.WebviewViewProvider {
         html += '<div class="tile-layer-header"><span>L' + l + ' ' + layerNames[l] + '</span><span>' + byLayer[l].length + '</span></div>';
 
         for (const tile of byLayer[l]) {
+          const badges = [];
+          if (tile.variants && tile.variants.length > 0) badges.push('<span style="color:var(--pixel-accent);font-size:8px;" title="Has ' + tile.variants.length + ' variants">V' + tile.variants.length + '</span>');
+          if (tile.swapGroup) badges.push('<span style="color:#ff77a8;font-size:8px;" title="Swap group: ' + tile.swapGroup + '">S</span>');
+
           html += '<div class="tile-entry" data-key="' + tile.key + '">';
           html += '<canvas width="16" height="16" data-sprite="' + tile.spriteId + '"></canvas>';
           html += '<span class="tile-pos">(' + tile.x + ',' + tile.y + ')</span>';
           html += '<span class="tile-name">' + tile.spriteId + '</span>';
+          html += badges.join(' ');
           html += '<button class="tile-remove" data-key="' + tile.key + '" title="Remove tile">x</button>';
           html += '</div>';
         }
@@ -906,10 +1060,11 @@ export class ModuleEditorPanel implements vscode.WebviewViewProvider {
           moduleTiles.delete(key);
           renderCanvas();
           renderTileList();
+          renderShuffleSection();
         });
       });
 
-      // Click on entry to select and highlight on canvas
+      // Click on entry to select, highlight on canvas, and show tile props
       listEl.querySelectorAll('.tile-entry').forEach(entry => {
         entry.addEventListener('click', (e) => {
           if (e.target.classList.contains('tile-remove')) return;
@@ -921,6 +1076,9 @@ export class ModuleEditorPanel implements vscode.WebviewViewProvider {
           document.querySelectorAll('.layer-row').forEach(r => {
             r.classList.toggle('active', parseInt(r.dataset.layer) === layer);
           });
+
+          // Show tile properties panel
+          showTileProps(key);
 
           // Flash the tile on canvas
           flashTile(x, y);
@@ -1017,9 +1175,296 @@ export class ModuleEditorPanel implements vscode.WebviewViewProvider {
       });
     }
 
-    // ─── Rarity Slider ─────────────────────────────────────────────────
+    // ─── Rarity Slider ──────────────────────────────────────────────────
     document.getElementById('prop-rarity').addEventListener('input', (e) => {
       document.getElementById('prop-rarity-val').textContent = (parseInt(e.target.value) / 100).toFixed(1);
+    });
+
+    // ─── Category Weights ───────────────────────────────────────────────
+
+    function getEffectiveWeight(mod) {
+      if (weightEdits.has(mod.id)) return weightEdits.get(mod.id);
+      return mod.weight ?? 1.0;
+    }
+
+    function getCategoryWeightForModule(moduleId) {
+      if (weightEdits.has(moduleId)) return weightEdits.get(moduleId);
+      const mod = allModules.find(m => m.id === moduleId);
+      return mod ? (mod.weight ?? 1.0) : 1.0;
+    }
+
+    function renderCategoryWeights() {
+      const category = document.getElementById('prop-category').value;
+      const currentId = document.getElementById('module-id').value.trim();
+      document.getElementById('cat-weight-category').textContent = '(' + category + ')';
+
+      const peers = allModules.filter(m => m.category === category);
+
+      if (peers.length === 0) {
+        document.getElementById('cat-weights-list').innerHTML =
+          '<div style="padding:6px;font-size:9px;color:var(--pixel-muted);">No modules in this category</div>';
+        return;
+      }
+
+      const totalWeight = peers.reduce((sum, m) => sum + getEffectiveWeight(m), 0);
+
+      let html = '';
+      for (const mod of peers) {
+        const w = getEffectiveWeight(mod);
+        const pct = totalWeight > 0 ? (w / totalWeight * 100) : 0;
+        const isCurrent = mod.id === currentId;
+
+        html += '<div class="cat-weight-row' + (isCurrent ? ' current' : '') + '" data-mod-id="' + mod.id + '">';
+        html += '<span class="cw-name" title="' + mod.id + '">' + (mod.name || mod.id) + '</span>';
+        html += '<input type="number" class="cw-input" data-mod-id="' + mod.id + '" value="' + w.toFixed(1) + '" min="0.1" max="10" step="0.1">';
+        html += '<span class="cw-pct">' + pct.toFixed(0) + '%</span>';
+        html += '<div class="cw-bar"><div class="cw-bar-fill" style="width:' + Math.min(pct, 100) + '%"></div></div>';
+        html += '</div>';
+      }
+
+      document.getElementById('cat-weights-list').innerHTML = html;
+
+      // Wire weight input changes
+      document.querySelectorAll('.cw-input').forEach(input => {
+        input.addEventListener('input', (e) => {
+          const modId = e.target.dataset.modId;
+          const val = parseFloat(e.target.value);
+          if (isNaN(val) || val < 0) return;
+          weightEdits.set(modId, val);
+          // Update percentages without full re-render (avoids losing focus)
+          updateCategoryPercentages();
+        });
+      });
+
+      // Wire name clicks to jump to that module
+      document.querySelectorAll('.cw-name').forEach(el => {
+        el.addEventListener('click', () => {
+          const modId = el.closest('.cat-weight-row').dataset.modId;
+          if (modId === currentId) return;
+          moduleSelect.value = modId;
+          const mod = allModules.find(m => m.id === modId);
+          if (mod) loadModule(mod);
+        });
+      });
+    }
+
+    function updateCategoryPercentages() {
+      const category = document.getElementById('prop-category').value;
+      const peers = allModules.filter(m => m.category === category);
+      const totalWeight = peers.reduce((sum, m) => sum + getEffectiveWeight(m), 0);
+
+      document.querySelectorAll('.cat-weight-row').forEach(row => {
+        const modId = row.dataset.modId;
+        const w = getEffectiveWeight(allModules.find(m => m.id === modId) || { id: modId });
+        const pct = totalWeight > 0 ? (w / totalWeight * 100) : 0;
+        row.querySelector('.cw-pct').textContent = pct.toFixed(0) + '%';
+        row.querySelector('.cw-bar-fill').style.width = Math.min(pct, 100) + '%';
+      });
+    }
+
+    // Save all weight edits to backend
+    document.getElementById('btn-save-weights').addEventListener('click', () => {
+      if (weightEdits.size === 0) return;
+      const updates = {};
+      for (const [modId, weight] of weightEdits) {
+        updates[modId] = weight;
+        // Also update in-memory
+        const mod = allModules.find(m => m.id === modId);
+        if (mod) mod.weight = weight;
+      }
+      vscode.postMessage({ type: 'saveWeights', data: updates });
+      weightEdits.clear();
+    });
+
+    // Normalize weights so they sum to 1.0
+    document.getElementById('btn-normalize-weights').addEventListener('click', () => {
+      const category = document.getElementById('prop-category').value;
+      const peers = allModules.filter(m => m.category === category);
+      const totalWeight = peers.reduce((sum, m) => sum + getEffectiveWeight(m), 0);
+      if (totalWeight <= 0 || peers.length === 0) return;
+
+      for (const mod of peers) {
+        const normalized = getEffectiveWeight(mod) / totalWeight;
+        weightEdits.set(mod.id, parseFloat(normalized.toFixed(2)));
+      }
+      renderCategoryWeights();
+    });
+
+    // Re-render category weights when category changes
+    document.getElementById('prop-category').addEventListener('change', renderCategoryWeights);
+
+    // ─── Tile Properties (variants / swap group) ────────────────────────
+    let selectedTileKey = null; // "x,y,layer" of currently selected tile
+
+    function showTileProps(key) {
+      selectedTileKey = key;
+      const tile = moduleTiles.get(key);
+      if (!tile) return;
+      const [x, y, layer] = key.split(',').map(Number);
+      document.getElementById('tile-props-pos').textContent = '(' + x + ',' + y + ' L' + layer + ')';
+      document.getElementById('tile-variants').value = (tile.variants || []).join(', ');
+      document.getElementById('tile-swap-group').value = tile.swapGroup || '';
+      document.getElementById('tile-props').style.display = 'block';
+    }
+
+    function hideTileProps() {
+      selectedTileKey = null;
+      document.getElementById('tile-props').style.display = 'none';
+    }
+
+    document.getElementById('tile-props-apply').addEventListener('click', () => {
+      if (!selectedTileKey) return;
+      const tile = moduleTiles.get(selectedTileKey);
+      if (!tile) return;
+
+      const variantsRaw = document.getElementById('tile-variants').value.trim();
+      if (variantsRaw) {
+        tile.variants = variantsRaw.split(',').map(v => v.trim()).filter(v => v.length > 0);
+      } else {
+        delete tile.variants;
+      }
+
+      const swapGroup = document.getElementById('tile-swap-group').value.trim();
+      if (swapGroup) {
+        tile.swapGroup = swapGroup;
+      } else {
+        delete tile.swapGroup;
+      }
+
+      renderTileList();
+      renderShuffleSection();
+    });
+
+    document.getElementById('tile-props-close').addEventListener('click', hideTileProps);
+
+    // ─── Content Shuffling ──────────────────────────────────────────────
+    function renderShuffleSection() {
+      const tiles = Array.from(moduleTiles.entries());
+      const totalTiles = tiles.length;
+
+      // Collect swap groups
+      const swapGroups = new Map(); // groupName -> [{key, tile}]
+      const variantTiles = []; // [{key, tile}]
+
+      for (const [key, tile] of tiles) {
+        if (tile.swapGroup) {
+          if (!swapGroups.has(tile.swapGroup)) swapGroups.set(tile.swapGroup, []);
+          swapGroups.get(tile.swapGroup).push({ key, tile });
+        }
+        if (tile.variants && tile.variants.length > 0) {
+          variantTiles.push({ key, tile });
+        }
+      }
+
+      // Summary
+      const summaryEl = document.getElementById('shuffle-summary');
+      if (totalTiles === 0) {
+        summaryEl.innerHTML = 'No tiles placed';
+      } else {
+        const parts = [];
+        if (variantTiles.length > 0) {
+          parts.push('<strong>' + variantTiles.length + '</strong> tile(s) with variants');
+        }
+        if (swapGroups.size > 0) {
+          const groupCount = swapGroups.size;
+          const tileCount = Array.from(swapGroups.values()).reduce((s, g) => s + g.length, 0);
+          parts.push('<strong>' + tileCount + '</strong> tile(s) in <strong>' + groupCount + '</strong> swap group(s)');
+        }
+        if (parts.length === 0) {
+          summaryEl.innerHTML = totalTiles + ' tiles, no shuffling configured';
+        } else {
+          summaryEl.innerHTML = parts.join(' · ');
+        }
+      }
+
+      // Swap groups display
+      const groupsEl = document.getElementById('swap-groups-display');
+      if (swapGroups.size === 0) {
+        groupsEl.innerHTML = '';
+      } else {
+        let html = '';
+        for (const [name, members] of swapGroups) {
+          html += '<span class="swap-group-tag" data-sg="' + name + '" title="Click to select group tiles">';
+          html += name + ' <span class="sg-count">(' + members.length + ')</span>';
+          html += '</span>';
+        }
+        groupsEl.innerHTML = html;
+
+        // Click group tag to highlight those tiles on canvas
+        groupsEl.querySelectorAll('.swap-group-tag').forEach(tag => {
+          tag.addEventListener('click', () => {
+            const groupName = tag.dataset.sg;
+            const members = swapGroups.get(groupName);
+            if (!members) return;
+            // Flash all tiles in the group
+            for (const m of members) {
+              const [x, y] = m.key.split(',').map(Number);
+              flashTile(x, y);
+            }
+          });
+        });
+      }
+
+      // Variant tiles display
+      const variantsEl = document.getElementById('variant-tiles-display');
+      if (variantTiles.length === 0) {
+        variantsEl.style.display = 'none';
+      } else {
+        variantsEl.style.display = 'block';
+        let html = '';
+        for (const { key, tile } of variantTiles) {
+          const [x, y, layer] = key.split(',').map(Number);
+          html += '<div class="variant-tile-entry" data-key="' + key + '">';
+          html += '<span class="vt-pos">(' + x + ',' + y + ' L' + layer + ')</span>';
+          html += '<span class="vt-sprites">' + tile.variants.join(', ') + '</span>';
+          html += '</div>';
+        }
+        variantsEl.innerHTML = html;
+
+        // Click to show tile props
+        variantsEl.querySelectorAll('.variant-tile-entry').forEach(entry => {
+          entry.addEventListener('click', () => {
+            const key = entry.dataset.key;
+            const [x, y] = key.split(',').map(Number);
+            showTileProps(key);
+            flashTile(x, y);
+          });
+        });
+      }
+    }
+
+    // Bulk assign swap group to all layer 2 tiles
+    document.getElementById('btn-assign-swap').addEventListener('click', () => {
+      const groupName = document.getElementById('bulk-swap-group').value.trim();
+      if (!groupName) return;
+
+      let count = 0;
+      for (const [key, tile] of moduleTiles) {
+        const [, , layer] = key.split(',').map(Number);
+        if (layer >= 2) {
+          tile.swapGroup = groupName;
+          count++;
+        }
+      }
+      if (count > 0) {
+        renderTileList();
+        renderShuffleSection();
+      }
+    });
+
+    // Clear all swap groups
+    document.getElementById('btn-clear-swap').addEventListener('click', () => {
+      let count = 0;
+      for (const [, tile] of moduleTiles) {
+        if (tile.swapGroup) {
+          delete tile.swapGroup;
+          count++;
+        }
+      }
+      if (count > 0) {
+        renderTileList();
+        renderShuffleSection();
+      }
     });
 
     // ─── Save / New / Delete ───────────────────────────────────────────
@@ -1032,7 +1477,10 @@ export class ModuleEditorPanel implements vscode.WebviewViewProvider {
       const tiles = [];
       for (const [key, tile] of moduleTiles) {
         const [x, y, layer] = key.split(',').map(Number);
-        tiles.push({ x, y, layer, type: tile.type, spriteId: tile.spriteId });
+        const entry = { x, y, layer, type: tile.type, spriteId: tile.spriteId };
+        if (tile.variants && tile.variants.length > 0) entry.variants = tile.variants;
+        if (tile.swapGroup) entry.swapGroup = tile.swapGroup;
+        tiles.push(entry);
       }
 
       // Parse tags from comma-separated input
@@ -1060,6 +1508,7 @@ export class ModuleEditorPanel implements vscode.WebviewViewProvider {
         },
         tags,
         rarity: parseInt(document.getElementById('prop-rarity').value) / 100,
+        weight: getCategoryWeightForModule(id),
         minWorldArea: parseInt(document.getElementById('prop-min-area').value) || 0,
         maxInstances: parseInt(document.getElementById('prop-max').value),
       };
@@ -1091,6 +1540,7 @@ export class ModuleEditorPanel implements vscode.WebviewViewProvider {
     // Initial render
     resizeCanvas();
     renderCanvas();
+    renderShuffleSection();
   </script>
 </body>
 </html>`;

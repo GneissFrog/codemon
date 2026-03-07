@@ -14,6 +14,7 @@ import * as vscode from 'vscode';
 import { getNonce } from './panel-utils';
 import { PIXEL_THEME_CSS } from '../webview/shared/pixel-theme';
 import { getStateMachineRegistry } from '../state-machine/StateMachineRegistry';
+import { getAnimationRegistry } from '../animation/AnimationRegistry';
 import {
   StateMachineConfig,
   AgentTypeConfig,
@@ -73,14 +74,43 @@ export class StateMachineEditorPanel implements vscode.WebviewViewProvider {
       if (!registry.getAllMachines().size) await registry.load();
       const data = registry.getSerializableConfig();
 
+      // Collect animation names from animation registry
+      const animNames = this._getAnimationNames();
+
       this._view.webview.postMessage({
         type: 'loadEditorData',
         machines: data.machines,
         agentTypes: data.agentTypes,
+        animationNames: animNames,
       });
     } catch (error) {
       console.error('[StateMachineEditor] Failed to load data:', error);
     }
+  }
+
+  private _getAnimationNames(): string[] {
+    try {
+      const animRegistry = getAnimationRegistry(this._extensionUri);
+      const names = new Set<string>();
+      for (const [, set] of animRegistry.getAllSets()) {
+        if (set.animations) {
+          for (const name of Object.keys(set.animations)) {
+            names.add(name);
+          }
+        }
+      }
+      return [...names].sort();
+    } catch {
+      return [];
+    }
+  }
+
+  public refreshAnimationNames(): void {
+    if (!this._view) return;
+    this._view.webview.postMessage({
+      type: 'updateAnimationNames',
+      animationNames: this._getAnimationNames(),
+    });
   }
 
   private async _saveMachine(data: { id: string; config: StateMachineConfig }): Promise<void> {
@@ -300,6 +330,7 @@ export class StateMachineEditorPanel implements vscode.WebviewViewProvider {
   </style>
 </head>
 <body>
+  <datalist id="anim-names"></datalist>
   <div class="sm-editor">
     <!-- Tabs -->
     <div class="tabs">
@@ -437,15 +468,30 @@ export class StateMachineEditorPanel implements vscode.WebviewViewProvider {
     let testSM = null; // { config, currentState, elapsed }
 
     // ─── Message Handling ──────────────────────────────────────────────
+    function populateAnimDatalist(names) {
+      const dl = document.getElementById('anim-names');
+      if (!dl) return;
+      dl.innerHTML = '';
+      (names || []).forEach(n => {
+        const opt = document.createElement('option');
+        opt.value = n;
+        dl.appendChild(opt);
+      });
+    }
+
     window.addEventListener('message', event => {
       const msg = event.data;
       switch (msg.type) {
         case 'loadEditorData':
           allMachines = msg.machines || {};
           allAgentTypes = msg.agentTypes || {};
+          populateAnimDatalist(msg.animationNames);
           initMachineSelect();
           initAgentTypeList();
           initTestMachineSelect();
+          break;
+        case 'updateAnimationNames':
+          populateAnimDatalist(msg.animationNames);
           break;
         case 'saved':
           break;
@@ -527,7 +573,7 @@ export class StateMachineEditorPanel implements vscode.WebviewViewProvider {
         const metaStr = state.metadata ? JSON.stringify(state.metadata) : '';
         tr.innerHTML =
           '<td><input value="' + esc(state.id) + '" data-field="id" data-idx="' + i + '" style="width:60px"></td>' +
-          '<td><input value="' + esc(state.animation || '') + '" data-field="animation" data-idx="' + i + '" style="width:55px"></td>' +
+          '<td><input value="' + esc(state.animation || '') + '" data-field="animation" data-idx="' + i + '" list="anim-names" style="width:55px"></td>' +
           '<td><input value="' + (state.duration != null ? state.duration : '') + '" data-field="duration" data-idx="' + i + '" type="number" style="width:45px" placeholder="-"></td>' +
           '<td><button class="row-del" data-del-state="' + i + '" title="' + esc(metaStr || 'Delete') + '">x</button></td>';
         tbody.appendChild(tr);

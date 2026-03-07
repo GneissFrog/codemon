@@ -249,33 +249,6 @@ export class PhaserRenderer implements Renderer {
 
     console.log(`[PhaserRenderer] Total spritesheets loaded: ${this.textures.size}`);
 
-    // Find and configure character spritesheet for agent animations
-    if (this.gameScene && assets.spriteMappings) {
-      const characterSheetName = assets.spriteMappings['character'];
-      if (characterSheetName && this.textures.has(characterSheetName)) {
-        const sheetData = assets.spritesheets[characterSheetName];
-        if (sheetData?.isCharacter) {
-          // If Aseprite data is available, use it for animation config
-          if (sheetData.asepriteData) {
-            this.gameScene.setAsepriteConfig(
-              characterSheetName,
-              sheetData.asepriteData,
-              sheetData.asepriteTags
-            );
-          } else if (sheetData.characterConfig) {
-            // Fall back to manual character config
-            const config = sheetData.characterConfig;
-            this.gameScene.setAgentConfig(
-              characterSheetName,
-              config.directions,
-              config.actions.map(a => ({ name: a.name, frames: a.frames }))
-            );
-          }
-          this.gameScene.createAgentAnimations();
-        }
-      }
-    }
-
     // Load animation sets if provided
     if (this.gameScene && assets.animationSets) {
       this.gameScene.setAnimationSets(assets.animationSets);
@@ -363,21 +336,9 @@ export class PhaserRenderer implements Renderer {
     // Force reload all textures
     await this.loadSpritesheets(assets, true);
 
-    // Recreate agent animations if character config changed
-    if (this.gameScene && assets.spriteMappings) {
-      const characterSheetName = assets.spriteMappings['character'];
-      if (characterSheetName) {
-        const sheetData = assets.spritesheets[characterSheetName];
-        if (sheetData?.isCharacter && sheetData?.characterConfig) {
-          const config = sheetData.characterConfig;
-          this.gameScene.setAgentConfig(
-            characterSheetName,
-            config.directions,
-            config.actions.map(a => ({ name: a.name, frames: a.frames }))
-          );
-          // Agent animations will be created on next updateAgentSprite call
-        }
-      }
+    // Reload animation sets
+    if (this.gameScene && assets.animationSets) {
+      this.gameScene.setAnimationSets(assets.animationSets);
     }
 
     console.log('[PhaserRenderer] Assets refreshed');
@@ -400,6 +361,14 @@ export class PhaserRenderer implements Renderer {
     if (!this.ready || !this.gameScene) return;
     // For now, just re-add the tile
     this.gameScene.addTile(tile);
+  }
+
+  /**
+   * Update a tile's sprite at runtime (for state-machine-driven tiles).
+   */
+  updateTileSprite(tileKey: string, newSpriteId: string): void {
+    if (!this.ready || !this.gameScene) return;
+    this.gameScene.updateTileSprite(tileKey, newSpriteId);
   }
 
   /**
@@ -519,19 +488,6 @@ export class PhaserRenderer implements Renderer {
   updateAgentSprite(x: number, y: number, action: string, direction: string): void {
     if (this.gameScene) {
       this.gameScene.updateAgentSprite(x, y, action, direction);
-    }
-  }
-
-  /**
-   * Update agent animation configuration (from SpriteConfigPanel)
-   */
-  setAgentConfig(
-    sheetName: string,
-    directions: string[],
-    actions: { name: string; frames: number }[]
-  ): void {
-    if (this.gameScene) {
-      this.gameScene.setAgentConfig(sheetName, directions, actions);
     }
   }
 

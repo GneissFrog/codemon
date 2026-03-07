@@ -2,21 +2,6 @@
   "version": 1,
   "description": "Sprout Lands asset pack - sprite coordinates and animations",
   "tileSize": 16,
-  "spriteMappings": {
-    "character": "claude-actions",
-    "chicken": "chicken",
-    "cow": "cow",
-    "pig": "pig",
-    "duck": "duck",
-    "grass": "grass",
-    "tilled-dirt": "tilled-dirt",
-    "fences": "fences",
-    "water": "water",
-    "plants": "plants",
-    "biome": "biome",
-    "paths": "paths",
-    "bridges": "bridges"
-  },
   "spritesheets": {
     "claude-actions": {
       "image": "assets/sprites/characters/Premium Charakter Spritesheet.png",
@@ -31,41 +16,6 @@
       "grid": {
         "cols": 24,
         "rows": 72
-      },
-      "isCharacter": true,
-      "characterConfig": {
-        "directions": [
-          "down",
-          "up",
-          "left",
-          "right"
-        ],
-        "actions": [
-          {
-            "name": "hoe",
-            "frames": 8
-          },
-          {
-            "name": "water",
-            "frames": 10
-          },
-          {
-            "name": "plant",
-            "frames": 6
-          },
-          {
-            "name": "harvest",
-            "frames": 6
-          },
-          {
-            "name": "walk",
-            "frames": 8
-          },
-          {
-            "name": "idle",
-            "frames": 8
-          }
-        ]
       },
       "sprites": {
         "comment": "Layout: 6 action columns, each with 6 direction variants × 6 frames. Directions: down, up, left, right, etc.",
@@ -1663,19 +1613,6 @@
       "grid": {
         "cols": 4,
         "rows": 4
-      },
-      "isCharacter": true,
-      "characterConfig": {
-        "directions": [
-          "down",
-          "up",
-          "left",
-          "right"
-        ],
-        "actions": [
-          "walk"
-        ],
-        "framesPerAction": 4
       },
       "sprites": {
         "char-walk-down-0": {

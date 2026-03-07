@@ -55,7 +55,7 @@ export class WorldMap {
   /**
    * Set a tile at world coordinates
    */
-  setTile(x: number, y: number, type: TileType, spriteId: string, variant: number = 0, layer: number = 0): void {
+  setTile(x: number, y: number, type: TileType, spriteId: string, variant: number = 0, layer: number = 0, stateMachineId?: string): void {
     const key = `${x},${y},${layer}`;
     this.tiles.set(key, {
       x,
@@ -64,6 +64,7 @@ export class WorldMap {
       spriteId,
       variant,
       layer,
+      ...(stateMachineId ? { stateMachineId } : {}),
     });
   }
 

@@ -18,6 +18,7 @@ export interface Tile {
   spriteId: string;
   variant: number;
   layer: number;
+  stateMachineId?: string;  // References a StateMachineConfig id for runtime state transitions
 }
 
 export interface Plot {
@@ -201,8 +202,6 @@ export interface SpritesheetData {
   imageUrl: string;
   normalMapUrl?: string;  // Data URL for normal map (if exists)
   sprites: Record<string, SpriteDef>;
-  isCharacter?: boolean;
-  characterConfig?: CharacterConfig;
   asepriteData?: AsepriteExportData;  // Parsed Aseprite JSON
   asepriteTags?: string[];  // Tags to filter
 }
@@ -239,23 +238,7 @@ export interface AsepriteExportData {
   };
 }
 
-// ─── Character Config Types ────────────────────────────────────────────────
-
-export interface ActionConfig {
-  name: string;
-  frames: number;
-  skill?: string;
-  customSkillName?: string;
-}
-
-export interface CharacterConfig {
-  directions: string[];
-  actions: ActionConfig[];
-  framesPerAction?: number;  // Legacy support
-}
-
 export interface WebviewAssetData {
-  spriteMappings: Record<string, string>;
   spritesheets: Record<string, SpritesheetData>;
   animationSets?: Record<string, import('../../overworld/core/types').AnimationSetDef>;
 }

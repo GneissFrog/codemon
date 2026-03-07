@@ -46,6 +46,8 @@ function parseAsciiLayer(
         layer: entry.layer ?? defaultLayer,
         type: entry.type,
         spriteId: entry.spriteId,
+        ...(entry.variants && { variants: entry.variants }),
+        ...(entry.swapGroup && { swapGroup: entry.swapGroup }),
       });
     }
   }
@@ -78,6 +80,7 @@ function parseSingleLayerAscii(def: AsciiModuleFormat): TileModuleDef {
     placement: { ...DEFAULT_PLACEMENT, ...def.placement },
     tags: def.tags ?? [],
     rarity: def.rarity ?? 0.5,
+    weight: def.weight ?? 1.0,
     minWorldArea: def.minWorldArea ?? 0,
     maxInstances: def.maxInstances ?? -1,
   };
@@ -108,6 +111,7 @@ function parseMultiLayerAscii(def: MultiLayerAsciiModuleFormat): TileModuleDef {
     placement: { ...DEFAULT_PLACEMENT, ...def.placement },
     tags: def.tags ?? [],
     rarity: def.rarity ?? 0.5,
+    weight: def.weight ?? 1.0,
     minWorldArea: def.minWorldArea ?? 0,
     maxInstances: def.maxInstances ?? -1,
   };
@@ -179,6 +183,7 @@ export function normalizeModuleDef(raw: Record<string, unknown>): TileModuleDef 
     placement: { ...DEFAULT_PLACEMENT, ...def.placement },
     tags: (def.tags ?? []) as string[],
     rarity: def.rarity ?? 0.5,
+    weight: def.weight ?? 1.0,
     minWorldArea: def.minWorldArea ?? 0,
     maxInstances: def.maxInstances ?? -1,
   };

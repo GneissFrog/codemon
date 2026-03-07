@@ -18,6 +18,8 @@ import { SpriteConfigPanel, getSpriteConfigPanel } from './panels/SpriteConfigPa
 import { ModuleEditorPanel, getModuleEditorPanel } from './panels/ModuleEditorPanel';
 import { StateMachineEditorPanel, getStateMachineEditorPanel } from './panels/StateMachineEditorPanel';
 import { TerrainConfigPanel, getTerrainConfigPanel } from './panels/TerrainConfigPanel';
+import { GameViewSettingsPanel, getGameViewSettingsPanel } from './panels/GameViewSettingsPanel';
+import { AnimationEditorPanel, getAnimationEditorPanel } from './panels/AnimationEditorPanel';
 import { onSettingsChanged, getSettings } from './core/settings';
 import { ActivityEntry, ToolUseEvent, SubagentStartEvent, SubagentStopEvent } from './core/event-types';
 import { FileAction } from './core/codebase-mapper';
@@ -106,6 +108,15 @@ export function activate(context: vscode.ExtensionContext): void {
     )
   );
 
+  // Register animation editor panel
+  const animationEditorPanel = getAnimationEditorPanel(extensionUri);
+  context.subscriptions.push(
+    vscode.window.registerWebviewViewProvider(
+      AnimationEditorPanel.viewType,
+      animationEditorPanel
+    )
+  );
+
   // Register module editor panel
   const moduleEditorPanel = getModuleEditorPanel(extensionUri);
   context.subscriptions.push(
@@ -130,6 +141,20 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.window.registerWebviewViewProvider(
       StateMachineEditorPanel.viewType,
       stateMachineEditorPanel
+    )
+  );
+
+  // When animation sets change, refresh autocomplete in state machine editor
+  animationEditorPanel.onDidSave(() => {
+    stateMachineEditorPanel.refreshAnimationNames();
+  });
+
+  // Register game view settings panel
+  const gameViewSettingsPanel = getGameViewSettingsPanel(extensionUri);
+  context.subscriptions.push(
+    vscode.window.registerWebviewViewProvider(
+      GameViewSettingsPanel.viewType,
+      gameViewSettingsPanel
     )
   );
 

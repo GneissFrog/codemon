@@ -102,6 +102,10 @@ export class GameEngine {
   private subagentSMs = new Map<string, StateMachine>();
   private lastUpdateTime = 0;
 
+  // Tile state machines — keyed by "x,y,layer"
+  private tileSMs = new Map<string, StateMachine>();
+  private tileSMDirty = new Map<string, string>();  // key → new spriteId for tiles that transitioned this frame
+
   // Manifest data for animations
   manifest: { animations?: Record<string, { frames: string[]; fps: number; loop: boolean }> } | null = null;
 
@@ -935,6 +939,7 @@ export class GameEngine {
     this.updateParticles(now);
     this.updateAnimations(deltaTime);
     this.updateGrowthEffects(now);
+    this.updateTileStateMachines(deltaTime);
     this.lastUpdateTime = now;
 
     // Update weather if world dimensions are provided
@@ -949,6 +954,84 @@ export class GameEngine {
     this.state.tiles = tiles;
     this.buildWalkabilityMap();
     this.registerTileAnimations();
+    this.initTileStateMachines();
+  }
+
+  // ─── Tile State Machines ─────────────────────────────────────────────────
+
+  /**
+   * Initialize state machines for tiles that have a stateMachineId.
+   * Called when tiles are loaded/reloaded.
+   */
+  private initTileStateMachines(): void {
+    this.tileSMs.clear();
+    this.tileSMDirty.clear();
+
+    for (const tile of this.state.tiles) {
+      if (!tile.stateMachineId) continue;
+
+      const config = this.smConfigs[tile.stateMachineId];
+      if (!config) {
+        console.warn(`[Engine] Tile SM config not found: ${tile.stateMachineId}`);
+        continue;
+      }
+
+      const key = `${tile.x},${tile.y},${tile.layer}`;
+      const sm = new StateMachine(config);
+
+      // Desynchronize timers: use position-based hash so identical SMs
+      // don't all transition at the same instant
+      const initialDuration = config.states.find(s => s.id === config.initialState)?.duration;
+      if (initialDuration && initialDuration > 0) {
+        const hash = ((tile.x * 37 + tile.y * 59) & 0x7fffffff) / 0x7fffffff;
+        const offsetMs = hash * initialDuration;
+        sm.update(offsetMs);
+      }
+
+      // Track transitions to mark dirty sprites
+      const transitionHandler = (event: { to: { spriteOverride?: string } }) => {
+        const newSprite = event.to.spriteOverride;
+        if (newSprite) {
+          this.tileSMDirty.set(key, newSprite);
+        }
+      };
+      sm.onTransition(transitionHandler);
+
+      this.tileSMs.set(key, sm);
+    }
+
+    if (this.tileSMs.size > 0) {
+      console.log(`[Engine] Initialized ${this.tileSMs.size} tile state machines`);
+    }
+  }
+
+  /**
+   * Advance all tile state machines. Called every frame from update().
+   */
+  private updateTileStateMachines(deltaMs: number): void {
+    if (this.tileSMs.size === 0) return;
+    this.tileSMDirty.clear();
+    for (const sm of this.tileSMs.values()) {
+      sm.update(deltaMs);
+    }
+  }
+
+  /**
+   * Get tiles whose sprite changed this frame due to state machine transitions.
+   * Returns a map of "x,y,layer" → new spriteId.
+   */
+  getDirtyTileSMs(): Map<string, string> {
+    return this.tileSMDirty;
+  }
+
+  /**
+   * Send an event to a specific tile's state machine (for future use: doors, etc.)
+   */
+  sendTileEvent(x: number, y: number, layer: number, event: string): boolean {
+    const key = `${x},${y},${layer}`;
+    const sm = this.tileSMs.get(key);
+    if (!sm) return false;
+    return sm.send(event);
   }
 
   setPlots(plots: Plot[]): void {

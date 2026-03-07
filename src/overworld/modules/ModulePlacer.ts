@@ -13,6 +13,7 @@ import {
   PlacementAffinity,
   ModuleCategory,
   ConnectionType,
+  CategoryBudgetConfig,
 } from '../core/types';
 import { OccupancyGrid } from './OccupancyGrid';
 import { ModuleRegistry } from './ModuleRegistry';
@@ -27,17 +28,46 @@ interface ModuleBudget {
   vegetation: number;
 }
 
-function computeBudget(worldArea: number, pathCount: number): ModuleBudget {
+/** Default budget rules: { base: divisor for worldArea, perPath: divisor for pathCount } */
+const DEFAULT_BUDGET_CONFIG: Record<string, CategoryBudgetConfig> = {
+  landmark:    { base: 3000, max: 2 },
+  environment: { base: 500 },
+  connector:   { perPath: 3 },
+  decorative:  { base: 200 },
+  vegetation:  { base: 50 },
+};
+
+function computeBudget(
+  worldArea: number,
+  pathCount: number,
+  overrides?: Record<string, CategoryBudgetConfig>
+): ModuleBudget {
   if (worldArea < 400) {
     // Very small worlds - minimal modules
     return { landmark: 0, environment: 0, connector: 0, decorative: 1, vegetation: 3 };
   }
+
+  const configs = { ...DEFAULT_BUDGET_CONFIG, ...overrides };
+  const result: Record<string, number> = {};
+
+  for (const [cat, cfg] of Object.entries(configs)) {
+    let count = 0;
+    if (cfg.perPath !== undefined) {
+      count = Math.floor(pathCount / cfg.perPath);
+    } else if (cfg.base !== undefined) {
+      count = Math.floor(worldArea / cfg.base);
+    }
+    if (cfg.max !== undefined) count = Math.min(count, cfg.max);
+    if (cfg.min !== undefined) count = Math.max(count, cfg.min);
+    result[cat] = count;
+  }
+
   return {
-    landmark: Math.min(2, Math.floor(worldArea / 3000)),
-    environment: Math.floor(worldArea / 500),
-    connector: Math.floor(pathCount / 3),
-    decorative: Math.floor(worldArea / 200),
-    vegetation: Math.floor(worldArea / 50),  // ~40 for a 2000-tile world
+    landmark:    result.landmark ?? 0,
+    environment: result.environment ?? 0,
+    connector:   result.connector ?? 0,
+    decorative:  result.decorative ?? 0,
+    vegetation:  result.vegetation ?? 0,
   };
 }
 
@@ -265,10 +295,9 @@ export function placeModules(
   // Skip modules for very small worlds
   if (worldArea < 200) return [];
 
-  const budget = computeBudget(worldArea, pathCount);
+  const budget = computeBudget(worldArea, pathCount, registry.getCategoryBudgets());
   const placed: PlacedModuleInfo[] = [];
   const placedByType = new Map<string, number>();
-  const placedByCategory = new Map<ModuleCategory, number>();
 
   // Build occupancy grid from existing plots (with 1-tile fence margin)
   const occupancy = new OccupancyGrid();
@@ -284,61 +313,82 @@ export function placeModules(
     if (tile.type === 'path') pathPositions.add(`${tile.x},${tile.y}`);
   }
 
-  // Get eligible modules sorted by priority: landmarks first, then env, connectors, vegetation, decorative
-  const categoryPriority: Record<ModuleCategory, number> = {
-    landmark: 0,
-    environment: 1,
-    connector: 2,
-    vegetation: 3,
-    decorative: 4,
-  };
+  // Process categories in priority order, filling budget slots via weighted selection
+  const categoryOrder: ModuleCategory[] = [
+    'landmark', 'environment', 'connector', 'vegetation', 'decorative',
+  ];
 
-  const eligible = registry.getEligible(worldArea)
-    .sort((a, b) => categoryPriority[a.category] - categoryPriority[b.category]);
+  const eligible = registry.getEligible(worldArea);
+  // Group eligible modules by category
+  const byCategory = new Map<ModuleCategory, TileModuleDef[]>();
+  for (const mod of eligible) {
+    const list = byCategory.get(mod.category) ?? [];
+    list.push(mod);
+    byCategory.set(mod.category, list);
+  }
 
-  for (const moduleDef of eligible) {
-    // Check category budget
-    const catBudgetKey = moduleDef.category as keyof ModuleBudget;
-    const catCount = placedByCategory.get(moduleDef.category) ?? 0;
-    if (catCount >= budget[catBudgetKey]) continue;
+  for (const category of categoryOrder) {
+    const catBudget = budget[category as keyof ModuleBudget];
+    const candidates = byCategory.get(category);
+    if (!candidates || candidates.length === 0 || catBudget <= 0) continue;
 
-    // Check per-module instance cap
-    if (moduleDef.maxInstances >= 0) {
-      const typeCount = placedByType.get(moduleDef.id) ?? 0;
-      if (typeCount >= moduleDef.maxInstances) continue;
-    }
+    for (let slot = 0; slot < catBudget; slot++) {
+      // Filter candidates with remaining instance allowance
+      const available = candidates.filter(m => {
+        if (m.maxInstances >= 0) {
+          const count = placedByType.get(m.id) ?? 0;
+          if (count >= m.maxInstances) return false;
+        }
+        return true;
+      });
+      if (available.length === 0) break;
 
-    // Rarity check - probabilistic skip
-    const rarityHash = hash2d(moduleDef.id.length * 37, catCount * 13 + placed.length);
-    if (rarityHash > moduleDef.rarity) continue;
+      // Weighted lottery among available candidates
+      const totalWeight = available.reduce((sum, m) => sum + m.weight, 0);
+      if (totalWeight <= 0) break;
 
-    // Try to place this module
-    const result = findBestPosition(
-      moduleDef,
-      occupancy,
-      ctx,
-      placed,
-      waterPositions,
-      pathPositions
-    );
+      const roll = hash2d(category.length * 53 + slot * 97, placed.length * 31 + slot) * totalWeight;
+      let cumulative = 0;
+      let selected: TileModuleDef | null = null;
+      for (const m of available) {
+        cumulative += m.weight;
+        if (roll < cumulative) {
+          selected = m;
+          break;
+        }
+      }
+      if (!selected) selected = available[available.length - 1];
 
-    if (result) {
-      // Stamp module tiles onto the map
-      stampModule(map, moduleDef, result.x, result.y);
+      // Rarity gate — probabilistic skip
+      const rarityHash = hash2d(selected.id.length * 37, slot * 13 + placed.length);
+      if (rarityHash > selected.rarity) continue;
 
-      // Mark occupancy (with 1-tile margin to prevent crowding)
-      occupancy.markRect(result.x, result.y, moduleDef.width, moduleDef.height, 1);
+      // Try to place this module
+      const result = findBestPosition(
+        selected,
+        occupancy,
+        ctx,
+        placed,
+        waterPositions,
+        pathPositions
+      );
 
-      const info: PlacedModuleInfo = {
-        moduleId: moduleDef.id,
-        x: result.x,
-        y: result.y,
-        width: moduleDef.width,
-        height: moduleDef.height,
-      };
-      placed.push(info);
-      placedByType.set(moduleDef.id, (placedByType.get(moduleDef.id) ?? 0) + 1);
-      placedByCategory.set(moduleDef.category, catCount + 1);
+      if (result) {
+        const instanceIndex = placedByType.get(selected.id) ?? 0;
+        stampModule(map, selected, result.x, result.y, instanceIndex);
+
+        occupancy.markRect(result.x, result.y, selected.width, selected.height, 1);
+
+        const info: PlacedModuleInfo = {
+          moduleId: selected.id,
+          x: result.x,
+          y: result.y,
+          width: selected.width,
+          height: selected.height,
+        };
+        placed.push(info);
+        placedByType.set(selected.id, instanceIndex + 1);
+      }
     }
   }
 
@@ -435,15 +485,77 @@ function findBestPosition(
   return best;
 }
 
-function stampModule(map: WorldMap, moduleDef: TileModuleDef, originX: number, originY: number): void {
-  for (const tile of moduleDef.tiles) {
+function stampModule(
+  map: WorldMap,
+  moduleDef: TileModuleDef,
+  originX: number,
+  originY: number,
+  instanceIndex: number
+): void {
+  const tiles = moduleDef.tiles;
+
+  // Phase 1: Resolve sprite variants per tile
+  const resolvedSprites = tiles.map((tile, i) => {
+    if (tile.variants && tile.variants.length > 1) {
+      const h = hash2d(
+        originX * 7 + originY * 13 + i,
+        instanceIndex * 31 + tile.x * 41 + tile.y * 59
+      );
+      const idx = Math.min(
+        Math.floor(h * tile.variants.length),
+        tile.variants.length - 1
+      );
+      return tile.variants[idx];
+    }
+    return tile.spriteId;
+  });
+
+  // Phase 2: Shuffle positions within swap groups (layer >= 2 only)
+  const shuffledPos = new Map<number, { x: number; y: number }>();
+
+  // Collect swap groups
+  const groups = new Map<string, number[]>();
+  for (let i = 0; i < tiles.length; i++) {
+    const sg = tiles[i].swapGroup;
+    if (sg && tiles[i].layer >= 2) {
+      const list = groups.get(sg) ?? [];
+      list.push(i);
+      groups.set(sg, list);
+    }
+  }
+
+  // Fisher-Yates shuffle each group's positions deterministically
+  for (const [groupName, indices] of groups) {
+    if (indices.length < 2) continue;
+
+    const positions = indices.map(i => ({ x: tiles[i].x, y: tiles[i].y }));
+    const shuffled = [...positions];
+    for (let i = shuffled.length - 1; i > 0; i--) {
+      const h = hash2d(
+        originX * 11 + originY * 23 + groupName.length * 37,
+        instanceIndex * 43 + i * 67
+      );
+      const j = Math.floor(h * (i + 1));
+      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+    }
+
+    for (let k = 0; k < indices.length; k++) {
+      shuffledPos.set(indices[k], shuffled[k]);
+    }
+  }
+
+  // Phase 3: Stamp tiles
+  for (let i = 0; i < tiles.length; i++) {
+    const tile = tiles[i];
+    const pos = shuffledPos.get(i) ?? { x: tile.x, y: tile.y };
     map.setTile(
-      originX + tile.x,
-      originY + tile.y,
+      originX + pos.x,
+      originY + pos.y,
       tile.type,
-      tile.spriteId,
+      resolvedSprites[i],
       0,
-      tile.layer
+      tile.layer,
+      tile.stateMachineId
     );
   }
 }

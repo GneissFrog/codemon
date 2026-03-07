@@ -10,39 +10,7 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
-import { SpriteManifest, SpritesheetDef, LoadedSpritesheet, LoadedSprite, CharacterConfig, LegacyCharacterConfig, ActionConfig, AsepriteConfig } from './types';
-
-// ─── Migration Helpers ───────────────────────────────────────────────────────
-
-/**
- * Migrate legacy character config format to new format with per-action frames
- */
-export function migrateCharacterConfig(config: LegacyCharacterConfig | CharacterConfig): CharacterConfig {
-  if (!config) {
-    return { directions: ['down', 'up', 'left', 'right'], actions: [] };
-  }
-
-  // Check if already migrated (actions is array of objects with 'name' property)
-  if (config.actions && config.actions.length > 0 && typeof config.actions[0] === 'object') {
-    return config as CharacterConfig;
-  }
-
-  // Migrate from legacy format
-  const legacy = config as LegacyCharacterConfig;
-  const globalFrames = legacy.framesPerAction || 6;
-
-  return {
-    directions: legacy.directions || ['down', 'up', 'left', 'right'],
-    actions: (legacy.actions as string[]).map((name: string): ActionConfig => ({
-      name,
-      frames: globalFrames,
-      skill: undefined,
-      customSkillName: undefined,
-    })),
-    // Keep framesPerAction temporarily for any legacy code that might need it
-    framesPerAction: globalFrames,
-  };
-}
+import { SpriteManifest, SpritesheetDef, LoadedSpritesheet, LoadedSprite, AsepriteConfig } from './types';
 
 // ─── Asset Loader ──────────────────────────────────────────────────────────
 
@@ -255,8 +223,6 @@ export class AssetLoader {
       imageUrl: string;
       normalMapUrl?: string;
       sprites: Record<string, { x: number; y: number; w: number; h: number }>;
-      isCharacter?: boolean;
-      characterConfig?: CharacterConfig;
       asepriteData?: import('./types').AsepriteExportData;
       asepriteTags?: string[];
     }> = {};
@@ -272,24 +238,10 @@ export class AssetLoader {
         };
       }
 
-      // Get metadata from manifest
-      const manifestSheet = this.manifest!.spritesheets[name] as {
-        isCharacter?: boolean;
-        characterConfig?: LegacyCharacterConfig | CharacterConfig;
-      };
-
-      // Migrate character config if needed
-      let characterConfig: CharacterConfig | undefined;
-      if (manifestSheet?.characterConfig) {
-        characterConfig = migrateCharacterConfig(manifestSheet.characterConfig);
-      }
-
       spritesheets[name] = {
         imageUrl: sheet.imageUrl,
         normalMapUrl: sheet.normalMapUrl,
         sprites,
-        isCharacter: manifestSheet?.isCharacter,
-        characterConfig,
         asepriteData: sheet.asepriteData,
         asepriteTags: sheet.asepriteTags,
       };
@@ -297,7 +249,6 @@ export class AssetLoader {
 
     return {
       manifest: this.manifest,
-      spriteMappings: this.manifest.spriteMappings || {},
       spritesheets,
     };
   }
@@ -322,13 +273,10 @@ export class AssetLoader {
 
 export interface WebviewAssetData {
   manifest: SpriteManifest;
-  spriteMappings: Record<string, string>;  // purpose -> sheetName
   spritesheets: Record<string, {
     imageUrl: string;
     normalMapUrl?: string;
     sprites: Record<string, { x: number; y: number; w: number; h: number }>;
-    isCharacter?: boolean;
-    characterConfig?: CharacterConfig;
     asepriteData?: import('./types').AsepriteExportData;  // Parsed Aseprite JSON
     asepriteTags?: string[];  // Tags to filter
   }>;
