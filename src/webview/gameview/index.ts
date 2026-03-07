@@ -63,6 +63,9 @@ let hoveredPlot: Plot | null = null;
 // Highlight state
 let highlightSpriteId: string | null = null;
 
+// Bug tracking from ContextFarmEngine
+let activeBugs: Array<{ filePath: string; type: string; errorMessage?: string }> = [];
+
 // ─── Initialization ────────────────────────────────────────────────────────
 
 export async function initGameView(options: {
@@ -131,6 +134,23 @@ export async function initGameView(options: {
     // Emit dust while walking using Phaser particles
     if (engine.state.agent.isMoving && animFrame % 10 === 0) {
       (renderer as PhaserRenderer).emitDust(engine.state.agent.x, engine.state.agent.y + 6);
+    }
+
+    // Emit particles when action animation starts on arrival
+    {
+      const ag = engine.state.agent;
+      if (ag.actionStartTime && !ag.isMoving) {
+        const elapsed = now - ag.actionStartTime;
+        if (elapsed < 50) {
+          if (ag.animation === 'write' || ag.animation === 'water') {
+            (renderer as PhaserRenderer).emitSparkles(ag.x, ag.y - 4);
+          } else if (ag.animation === 'investigate' || ag.animation === 'hoe') {
+            (renderer as PhaserRenderer).emitDust(ag.x, ag.y);
+          } else if (ag.animation === 'bash' || ag.animation === 'plant') {
+            (renderer as PhaserRenderer).emitDust(ag.x, ag.y + 4);
+          }
+        }
+      }
     }
 
     // Update normal map lighting (agent torch + day/night)
@@ -211,6 +231,48 @@ function renderMap(): void {
         const maxChars = Math.floor((plot.width * TILE_SIZE - 4) / 5);
         const truncLabel = label.length > maxChars ? label.slice(0, maxChars - 1) + '~' : label;
         renderer.drawText(truncLabel, plot.x * TILE_SIZE + 3, plot.y * TILE_SIZE + 10, '#8a8a8a', 7);
+      }
+    }
+  }
+
+  // Draw active plot highlight (fading glow when agent performs action)
+  if (engine.activePlot) {
+    const elapsed = performance.now() - engine.highlightStartTime;
+    const fadeProgress = Math.min(1, elapsed / engine.highlightDuration);
+    const alpha = (0.4 - fadeProgress * 0.4) * (0.8 + Math.sin(glowPhase * 6) * 0.2);
+    if (alpha > 0.01) {
+      const ap = engine.activePlot;
+      const actionColor = engine.state.agent.animation === 'write' || engine.state.agent.animation === 'water' ? '#4488ff' :
+                           engine.state.agent.animation === 'bash' || engine.state.agent.animation === 'plant' ? '#ff8844' : '#ffec27';
+      renderer.drawRect(
+        ap.x * TILE_SIZE - 1,
+        ap.y * TILE_SIZE - 1,
+        ap.width * TILE_SIZE + 2,
+        ap.height * TILE_SIZE + 2,
+        actionColor,
+        alpha
+      );
+    }
+  }
+
+  // Draw bug indicators on affected plots
+  if (activeBugs.length > 0) {
+    const buggedFiles = new Set(activeBugs.map(b => b.filePath));
+    for (const plot of engine.state.plots) {
+      if (!plot.isDirectory && buggedFiles.has(plot.filePath)) {
+        const bugAlpha = 0.15 + Math.sin(glowPhase * 4 + plot.x * 0.3) * 0.1;
+        renderer.drawRect(
+          plot.x * TILE_SIZE,
+          plot.y * TILE_SIZE,
+          plot.width * TILE_SIZE,
+          plot.height * TILE_SIZE,
+          '#ff4444',
+          bugAlpha
+        );
+        // Small red dot at top-right corner
+        const dotX = (plot.x + plot.width - 0.5) * TILE_SIZE;
+        const dotY = (plot.y + 0.5) * TILE_SIZE;
+        renderer.drawRect(dotX - 2, dotY - 2, 4, 4, '#ff2222', 0.9);
       }
     }
   }
@@ -458,10 +520,11 @@ function setupMessageHandler(): void {
         engine.wander.lastActivityTime = performance.now();
         engine.wander.isWandering = false;
         engine.wander.isPaused = false;
-        engine.agentPath = [];
-        if (message.animation === 'write') {
-          (renderer as PhaserRenderer).emitSparkles(engine.state.agent.x, engine.state.agent.y - 4);
-        }
+        // Don't clear agentPath — movement should complete naturally
+        break;
+
+      case 'moveAndAct':
+        engine.moveAgentToWithAction(message.filePath, message.action, message.duration);
         break;
 
       case 'updateConfig':
@@ -660,8 +723,16 @@ function handleContextFarmUpdate(state: any): void {
     (renderer as PhaserRenderer).setWeather(weatherType, fillPercentage / 100);
   }
 
-  // TODO: Update bug overlays on plots when visualization is implemented
-  // state.bugs contains BugInstance[] with filePath, type, errorMessage
+  // Update bug overlays on plots
+  if (state.bugs) {
+    activeBugs = state.bugs.map((bug: any) => ({
+      filePath: bug.filePath,
+      type: bug.type,
+      errorMessage: bug.errorMessage,
+    }));
+  } else {
+    activeBugs = [];
+  }
 }
 
 // ─── Utility Functions ─────────────────────────────────────────────────────

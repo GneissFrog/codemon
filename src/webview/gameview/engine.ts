@@ -82,6 +82,11 @@ export class GameEngine {
   // Spatial hash for O(1) plot lookups
   plotSpatialHash = new SpatialHash<Plot>(10);
 
+  // Active plot highlight (shown when agent performs action at a plot)
+  activePlot: Plot | null = null;
+  highlightStartTime = 0;
+  highlightDuration = 2000; // 2 seconds fade
+
   // Wander AI (legacy — used as fallback when no state machine config loaded)
   wander: WanderState = {
     enabled: true,
@@ -142,6 +147,9 @@ export class GameEngine {
         frameIndex: 0,
         type: 'ranger',
         direction: 'down',
+        pendingAction: null,
+        actionStartTime: null,
+        actionDuration: null,
       },
       subagents: [],
       particles: [],
@@ -333,11 +341,11 @@ export class GameEngine {
           agent.targetY = this.agentPath[0].y;
         } else {
           agent.isMoving = false;
-          agent.animation = 'idle';
+          this.onAgentArrived();
         }
       } else {
         agent.isMoving = false;
-        agent.animation = 'idle';
+        this.onAgentArrived();
       }
     } else {
       agent.x += dx * speed;
@@ -391,6 +399,57 @@ export class GameEngine {
       agent.isMoving = true;
     }
     agent.filePath = filePath;
+  }
+
+  /**
+   * Move agent to a file and perform an action animation on arrival.
+   * Combines movement + deferred action into a single operation.
+   */
+  moveAgentToWithAction(filePath: string, action: string, duration: number): void {
+    const agent = this.state.agent;
+    agent.pendingAction = action;
+    agent.actionStartTime = null;
+    agent.actionDuration = duration;
+    this.moveAgentTo(filePath);
+  }
+
+  /**
+   * Called when the agent arrives at its movement destination.
+   * If a pending action exists, play it; otherwise go idle.
+   */
+  private onAgentArrived(): void {
+    const agent = this.state.agent;
+    if (agent.pendingAction) {
+      agent.animation = agent.pendingAction as any;
+      agent.actionStartTime = performance.now();
+      agent.pendingAction = null;
+
+      // Highlight the target plot
+      const tileX = Math.floor(agent.x / TILE_SIZE);
+      const tileY = Math.floor(agent.y / TILE_SIZE);
+      this.activePlot = this.getPlotAtTile(tileX, tileY) || null;
+      this.highlightStartTime = performance.now();
+    } else {
+      agent.animation = 'idle';
+    }
+  }
+
+  /**
+   * Checks if the current action animation has expired and returns to idle.
+   */
+  checkActionTimeout(now: number): void {
+    const agent = this.state.agent;
+    if (agent.actionStartTime && agent.actionDuration) {
+      if (now - agent.actionStartTime >= agent.actionDuration) {
+        agent.animation = 'idle';
+        agent.actionStartTime = null;
+        agent.actionDuration = null;
+      }
+    }
+    // Clear plot highlight after duration
+    if (this.activePlot && now - this.highlightStartTime >= this.highlightDuration) {
+      this.activePlot = null;
+    }
   }
 
   // ─── Wander AI ────────────────────────────────────────────────────────────
@@ -934,6 +993,7 @@ export class GameEngine {
 
   update(deltaTime: number, now: number, animFrame: number, worldWidth?: number, worldHeight?: number): void {
     this.updateAgentPosition(deltaTime);
+    this.checkActionTimeout(now);
     this.updateWander(now);
     this.updateSubagents(now, animFrame);
     this.updateParticles(now);

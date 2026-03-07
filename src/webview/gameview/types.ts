@@ -38,7 +38,7 @@ export interface Plot {
 
 // ─── Agent Types ──────────────────────────────────────────────────────────
 
-export type AgentAnimation = 'idle' | 'walk' | 'hoe' | 'water' | 'plant' | 'harvest';
+export type AgentAnimation = 'idle' | 'walk' | 'hoe' | 'water' | 'plant' | 'harvest' | 'investigate' | 'write' | 'bash' | 'think' | 'error' | 'success';
 export type Direction = 'up' | 'down' | 'left' | 'right';
 
 export interface AgentState {
@@ -52,6 +52,12 @@ export interface AgentState {
   frameIndex: number;
   type: string;
   direction: Direction;
+  /** Action animation to play when agent arrives at destination */
+  pendingAction: string | null;
+  /** Timestamp when action animation started playing */
+  actionStartTime: number | null;
+  /** How long the action animation should play (ms) */
+  actionDuration: number | null;
 }
 
 export interface SubagentState {

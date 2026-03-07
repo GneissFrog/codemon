@@ -224,6 +224,20 @@ export class GameViewPanel {
   }
 
   /**
+   * Move agent to a file and perform an action animation on arrival.
+   */
+  public moveAgentToFileWithAction(filePath: string, action: string, duration: number): void {
+    if (this._panel) {
+      this._panel.webview.postMessage({
+        type: 'moveAndAct',
+        filePath,
+        action,
+        duration,
+      });
+    }
+  }
+
+  /**
    * Add activity entry to the log
    */
   public addActivityEntry(entry: ActivityEntry): void {
