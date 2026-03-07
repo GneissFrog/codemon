@@ -12,6 +12,7 @@ import {
   PlacedModuleInfo,
   PlacementAffinity,
   ModuleCategory,
+  ConnectionType,
 } from '../core/types';
 import { OccupancyGrid } from './OccupancyGrid';
 import { ModuleRegistry } from './ModuleRegistry';
@@ -163,6 +164,83 @@ function affinityScore(
     default:
       return 0.5;
   }
+}
+
+// ─── Connection Scoring ───────────────────────────────────────────────────────
+
+/**
+ * Check if the tile at (x,y) matches the expected connection type.
+ * Checks terrain layer first, then ground layer.
+ */
+function checkConnectionMatch(
+  connectionType: ConnectionType,
+  x: number,
+  y: number,
+  map: WorldMap
+): boolean {
+  if (connectionType === 'any') return true;
+
+  for (const layer of [1, 0]) {
+    const tile = map.getTile(x, y, layer);
+    if (!tile) continue;
+
+    switch (connectionType) {
+      case 'path':
+        if (tile.type === 'path' || tile.type === 'bridge') return true;
+        break;
+      case 'grass':
+        if (tile.type === 'grass') return true;
+        break;
+      case 'water':
+        if (tile.type === 'water') return true;
+        break;
+      case 'fence':
+        if (tile.type === 'fence' || tile.type === 'fence-gate') return true;
+        break;
+    }
+  }
+  return false;
+}
+
+/**
+ * Score a module's connection points at a candidate position.
+ * Returns null if any required connection is unsatisfied (hard reject).
+ * Returns a ratio [0, 1] of matched optional connections otherwise.
+ */
+function connectionScore(
+  moduleDef: TileModuleDef,
+  originX: number,
+  originY: number,
+  map: WorldMap
+): number | null {
+  if (moduleDef.connectionPoints.length === 0) return 0;
+
+  let matched = 0;
+  let total = 0;
+
+  for (const cp of moduleDef.connectionPoints) {
+    // Compute adjacent tile position outside the module
+    let adjX = originX + cp.x;
+    let adjY = originY + cp.y;
+
+    switch (cp.edge) {
+      case 'north': adjY -= 1; break;
+      case 'south': adjY += 1; break;
+      case 'west':  adjX -= 1; break;
+      case 'east':  adjX += 1; break;
+    }
+
+    const isMatch = checkConnectionMatch(cp.type, adjX, adjY, map);
+
+    if (cp.required && !isMatch) {
+      return null; // Hard reject
+    }
+
+    total++;
+    if (isMatch) matched++;
+  }
+
+  return total === 0 ? 0 : matched / total;
 }
 
 // ─── Main Placer ───────────────────────────────────────────────────────────
@@ -330,6 +408,10 @@ function findBestPosition(
       }
       if (tooCloseSame || tooCloseAny) continue;
 
+      // Connection point validation
+      const connScore = connectionScore(moduleDef, x, y, map);
+      if (connScore === null) continue; // required connection unsatisfied
+
       // Compute score
       const aScore = affinityScore(
         x, y, moduleDef.width, moduleDef.height,
@@ -341,7 +423,8 @@ function findBestPosition(
       // Deterministic noise for tiebreaking
       const noise = hash2d(x * 31 + moduleDef.id.length, y * 17 + placed.length) * 0.1;
 
-      const score = aScore + noise;
+      // Connection bonus: 0.0–0.3 based on matched connections
+      const score = aScore + connScore * 0.3 + noise;
 
       if (!best || score > best.score) {
         best = { x, y, score };

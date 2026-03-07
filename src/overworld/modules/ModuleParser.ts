@@ -131,6 +131,30 @@ export function parseAsciiModule(
 }
 
 /**
+ * Normalize a raw connection point from JSON.
+ * Handles backward-compat: "direction" → "edge", missing "required", out-of-bounds coords.
+ */
+function normalizeConnectionPoint(
+  raw: Record<string, unknown>,
+  moduleWidth: number,
+  moduleHeight: number
+): ConnectionPoint {
+  const edge = (raw.edge ?? raw.direction ?? 'north') as ConnectionPoint['edge'];
+  const type = (raw.type ?? 'any') as ConnectionPoint['type'];
+  const required = typeof raw.required === 'boolean' ? raw.required : false;
+  let x = (raw.x as number) ?? 0;
+  let y = (raw.y as number) ?? 0;
+
+  // Clamp out-of-bounds coordinates to module edges
+  if (x < 0) x = 0;
+  if (y < 0) y = 0;
+  if (moduleWidth > 0 && x >= moduleWidth) x = moduleWidth - 1;
+  if (moduleHeight > 0 && y >= moduleHeight) y = moduleHeight - 1;
+
+  return { x, y, edge, type, required };
+}
+
+/**
  * Normalize a raw module definition from JSON.
  * Accepts either a full TileModuleDef or an ASCII shorthand format.
  */
@@ -141,14 +165,17 @@ export function normalizeModuleDef(raw: Record<string, unknown>): TileModuleDef 
 
   // Already in full TileModuleDef format - apply defaults for optional fields
   const def = raw as unknown as Partial<TileModuleDef>;
+  const width = def.width ?? 0;
+  const height = def.height ?? 0;
   return {
     id: def.id ?? 'unknown',
     name: def.name ?? def.id ?? 'Unknown Module',
     category: def.category ?? 'decorative' as ModuleCategory,
-    width: def.width ?? 0,
-    height: def.height ?? 0,
+    width,
+    height,
     tiles: (def.tiles ?? []) as ModuleTilePlacement[],
-    connectionPoints: (def.connectionPoints ?? []) as ConnectionPoint[],
+    connectionPoints: ((def.connectionPoints ?? []) as unknown as Record<string, unknown>[])
+      .map(cp => normalizeConnectionPoint(cp, width, height)),
     placement: { ...DEFAULT_PLACEMENT, ...def.placement },
     tags: (def.tags ?? []) as string[],
     rarity: def.rarity ?? 0.5,

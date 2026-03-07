@@ -1096,40 +1096,46 @@ export class WorldGenerator {
       const maxX = Math.max(startX, endX);
 
       // Horizontal segment — walk tile by tile, detect water gaps
+      // Only record gaps bounded by land on BOTH sides (no floating bridges)
+      const MAX_BRIDGE_LENGTH = 8;
       let currentGap: Array<{ x: number; y: number }> | null = null;
+      let hasLandBefore = false;
       for (let x = minX; x <= maxX; x++) {
         if (this.isWaterAt(x, startY)) {
           if (!currentGap) currentGap = [];
           currentGap.push({ x, y: startY });
         } else {
-          if (currentGap && currentGap.length > 0) {
+          if (currentGap && currentGap.length > 0
+              && hasLandBefore
+              && currentGap.length <= MAX_BRIDGE_LENGTH) {
             waterGaps.push({ tiles: currentGap, direction: 'horizontal' });
           }
           currentGap = null;
+          hasLandBefore = true;
           this.placePath(x, startY);
         }
       }
-      if (currentGap && currentGap.length > 0) {
-        waterGaps.push({ tiles: currentGap, direction: 'horizontal' });
-      }
+      // Trailing gaps intentionally NOT recorded — no land on the far side
 
       // Vertical segment — same gap detection
       currentGap = null;
+      hasLandBefore = false;
       for (let y = minY; y <= maxY; y++) {
         if (this.isWaterAt(endX, y)) {
           if (!currentGap) currentGap = [];
           currentGap.push({ x: endX, y });
         } else {
-          if (currentGap && currentGap.length > 0) {
+          if (currentGap && currentGap.length > 0
+              && hasLandBefore
+              && currentGap.length <= MAX_BRIDGE_LENGTH) {
             waterGaps.push({ tiles: currentGap, direction: 'vertical' });
           }
           currentGap = null;
+          hasLandBefore = true;
           this.placePath(endX, y);
         }
       }
-      if (currentGap && currentGap.length > 0) {
-        waterGaps.push({ tiles: currentGap, direction: 'vertical' });
-      }
+      // Trailing gaps intentionally NOT recorded — no land on the far side
     }
 
     // Place water crossings for detected gaps

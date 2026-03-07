@@ -298,6 +298,10 @@ export class ModuleEditorPanel implements vscode.WebviewViewProvider {
       <div class="palette-grid" id="palette-grid"></div>
     </div>
     <div id="palette-count" style="font-size:9px;color:var(--pixel-muted);margin-bottom:4px;"></div>
+    <div id="selected-sprite-indicator" style="display:flex;align-items:center;gap:6px;padding:4px;margin-bottom:4px;border:1px solid var(--pixel-border);background:var(--pixel-bg-light);min-height:28px;">
+      <canvas id="selected-sprite-preview" width="24" height="24" style="image-rendering:pixelated;border:1px solid var(--pixel-border);"></canvas>
+      <span id="selected-sprite-name" style="font-size:9px;color:var(--pixel-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">No sprite selected</span>
+    </div>
 
     <!-- Layer Panel -->
     <div class="section-label">Layers</div>
@@ -319,12 +323,6 @@ export class ModuleEditorPanel implements vscode.WebviewViewProvider {
       </div>
     </div>
 
-    <!-- Placed Tiles List -->
-    <div class="section-label">Placed Tiles <span id="tile-count">(0)</span></div>
-    <div class="tile-list-container">
-      <div id="tile-list"></div>
-    </div>
-
     <!-- Tile Canvas -->
     <div class="section-label">Canvas (<span id="canvas-size">5 x 5</span>)</div>
     <div class="prop-row">
@@ -337,6 +335,12 @@ export class ModuleEditorPanel implements vscode.WebviewViewProvider {
       <canvas id="module-canvas" width="160" height="160"></canvas>
     </div>
 
+    <!-- Placed Tiles List -->
+    <div class="section-label">Placed Tiles <span id="tile-count">(0)</span></div>
+    <div class="tile-list-container">
+      <div id="tile-list"></div>
+    </div>
+
     <!-- Properties -->
     <div class="section-label">Properties</div>
     <div class="prop-row">
@@ -346,7 +350,12 @@ export class ModuleEditorPanel implements vscode.WebviewViewProvider {
         <option value="environment">Environment</option>
         <option value="connector">Connector</option>
         <option value="landmark">Landmark</option>
+        <option value="vegetation">Vegetation</option>
       </select>
+    </div>
+    <div class="prop-row">
+      <label>Tags:</label>
+      <input id="prop-tags" type="text" placeholder="water-crossing, north-south" style="flex:1;">
     </div>
     <div class="prop-row">
       <label>Rarity:</label>
@@ -372,6 +381,28 @@ export class ModuleEditorPanel implements vscode.WebviewViewProvider {
         <option value="corner">Corner</option>
         <option value="between-plots">Between Plots</option>
       </select>
+    </div>
+
+    <!-- Placement Rules -->
+    <div class="section-label">Placement Rules</div>
+    <div class="prop-row">
+      <label style="min-width:auto;"><input type="checkbox" id="prop-overlap-water"> Allow over water</label>
+    </div>
+    <div class="prop-row">
+      <label style="min-width:auto;"><input type="checkbox" id="prop-requires-grass" checked> Requires grass</label>
+    </div>
+    <div class="prop-row">
+      <label style="min-width:auto;"><input type="checkbox" id="prop-overlap-deco" checked> Allow over decorations</label>
+    </div>
+    <div class="prop-row">
+      <label>Plot dist:</label>
+      <input id="prop-dist-plots" type="number" min="0" max="20" value="3" style="width:36px">
+      <label>Same dist:</label>
+      <input id="prop-dist-same" type="number" min="0" max="50" value="10" style="width:36px">
+    </div>
+    <div class="prop-row">
+      <label>Any dist:</label>
+      <input id="prop-dist-any" type="number" min="0" max="20" value="4" style="width:36px">
     </div>
 
     <!-- Connection Points -->
@@ -481,9 +512,17 @@ export class ModuleEditorPanel implements vscode.WebviewViewProvider {
             // Infer tile type from sheet name
             const typeMap = {
               grass: 'grass', water: 'water', 'tilled-dirt': 'tilled',
-              fences: 'fence', paths: 'path', plants: 'decoration', biome: 'decoration',
+              fences: 'fence', paths: 'path', bridges: 'bridge',
+              plants: 'decoration', biome: 'decoration',
             };
             selectedTileType = typeMap[sheetName] || 'decoration';
+
+            // Update selected sprite indicator
+            const pCtx = document.getElementById('selected-sprite-preview').getContext('2d');
+            pCtx.clearRect(0, 0, 24, 24);
+            pCtx.imageSmoothingEnabled = false;
+            pCtx.drawImage(img, sprite.x, sprite.y, sprite.w, sprite.h, 0, 0, 24, 24);
+            document.getElementById('selected-sprite-name').textContent = selectedSpriteId;
           });
 
           paletteGrid.appendChild(spriteCanvas);
@@ -528,6 +567,16 @@ export class ModuleEditorPanel implements vscode.WebviewViewProvider {
       document.getElementById('prop-max').value = mod.maxInstances;
       document.getElementById('prop-min-area').value = mod.minWorldArea;
       document.getElementById('prop-affinity').value = mod.placement?.affinity || 'any';
+      document.getElementById('prop-tags').value = (mod.tags || []).join(', ');
+
+      // Placement rules
+      const pl = mod.placement || {};
+      document.getElementById('prop-overlap-water').checked = pl.allowOverlapWater || false;
+      document.getElementById('prop-requires-grass').checked = pl.requiresGrass !== false; // default true
+      document.getElementById('prop-overlap-deco').checked = pl.allowOverlapDecorations !== false; // default true
+      document.getElementById('prop-dist-plots').value = pl.minDistFromPlots ?? 3;
+      document.getElementById('prop-dist-same').value = pl.minDistFromSame ?? 10;
+      document.getElementById('prop-dist-any').value = pl.minDistFromAny ?? 4;
 
       // Load tiles
       moduleTiles.clear();
@@ -558,6 +607,13 @@ export class ModuleEditorPanel implements vscode.WebviewViewProvider {
       document.getElementById('prop-max').value = -1;
       document.getElementById('prop-min-area').value = 300;
       document.getElementById('prop-affinity').value = 'any';
+      document.getElementById('prop-tags').value = '';
+      document.getElementById('prop-overlap-water').checked = false;
+      document.getElementById('prop-requires-grass').checked = true;
+      document.getElementById('prop-overlap-deco').checked = true;
+      document.getElementById('prop-dist-plots').value = 3;
+      document.getElementById('prop-dist-same').value = 10;
+      document.getElementById('prop-dist-any').value = 4;
       moduleTiles.clear();
       connectionPoints = [];
       gridWidth = 5;
@@ -910,7 +966,11 @@ export class ModuleEditorPanel implements vscode.WebviewViewProvider {
     function renderConnectionList() {
       const list = document.getElementById('conn-list');
       if (connectionPoints.length === 0) {
-        list.innerHTML = '<div style="font-size:9px;color:var(--pixel-muted);padding:4px;">Shift+click edge tiles to add connection points</div>';
+        list.innerHTML = '<div style="font-size:9px;color:var(--pixel-muted);padding:6px;line-height:1.5;">' +
+          '<strong style="color:var(--pixel-accent);">No connection points</strong><br>' +
+          'Shift+click edge tiles on the canvas to define where this module ' +
+          'connects to adjacent terrain (paths, grass, water, fences).' +
+          '</div>';
         return;
       }
 
@@ -922,8 +982,13 @@ export class ModuleEditorPanel implements vscode.WebviewViewProvider {
             '<option value="path"' + (cp.type === 'path' ? ' selected' : '') + '>path</option>' +
             '<option value="grass"' + (cp.type === 'grass' ? ' selected' : '') + '>grass</option>' +
             '<option value="water"' + (cp.type === 'water' ? ' selected' : '') + '>water</option>' +
+            '<option value="fence"' + (cp.type === 'fence' ? ' selected' : '') + '>fence</option>' +
             '<option value="any"' + (cp.type === 'any' ? ' selected' : '') + '>any</option>' +
           '</select>' +
+          '<label style="font-size:9px;display:flex;align-items:center;gap:2px;">' +
+            '<input type="checkbox" data-conn-req="' + i + '"' + (cp.required ? ' checked' : '') + ' style="width:10px;height:10px;">' +
+            'req' +
+          '</label>' +
           '<button data-conn-del="' + i + '" style="font-size:9px;background:var(--pixel-bg-light);color:var(--pixel-error);border:1px solid var(--pixel-border);cursor:pointer;padding:0 3px;">x</button>' +
           '</div>';
       }).join('');
@@ -934,6 +999,12 @@ export class ModuleEditorPanel implements vscode.WebviewViewProvider {
           const idx = parseInt(e.target.dataset.connIdx);
           connectionPoints[idx].type = e.target.value;
           renderCanvas();
+        });
+      });
+      list.querySelectorAll('[data-conn-req]').forEach(cb => {
+        cb.addEventListener('change', (e) => {
+          const idx = parseInt(e.target.dataset.connReq);
+          connectionPoints[idx].required = e.target.checked;
         });
       });
       list.querySelectorAll('[data-conn-del]').forEach(btn => {
@@ -964,6 +1035,12 @@ export class ModuleEditorPanel implements vscode.WebviewViewProvider {
         tiles.push({ x, y, layer, type: tile.type, spriteId: tile.spriteId });
       }
 
+      // Parse tags from comma-separated input
+      const tagsRaw = document.getElementById('prop-tags').value;
+      const tags = tagsRaw
+        ? tagsRaw.split(',').map(t => t.trim()).filter(t => t.length > 0)
+        : [];
+
       const moduleDef = {
         id,
         name: name || id,
@@ -973,15 +1050,15 @@ export class ModuleEditorPanel implements vscode.WebviewViewProvider {
         tiles,
         connectionPoints: connectionPoints.slice(),
         placement: {
-          minDistFromPlots: 3,
-          minDistFromSame: 10,
-          minDistFromAny: 4,
+          minDistFromPlots: parseInt(document.getElementById('prop-dist-plots').value) || 0,
+          minDistFromSame: parseInt(document.getElementById('prop-dist-same').value) || 0,
+          minDistFromAny: parseInt(document.getElementById('prop-dist-any').value) || 0,
           affinity: document.getElementById('prop-affinity').value,
-          allowOverlapWater: false,
-          allowOverlapDecorations: true,
-          requiresGrass: true,
+          allowOverlapWater: document.getElementById('prop-overlap-water').checked,
+          allowOverlapDecorations: document.getElementById('prop-overlap-deco').checked,
+          requiresGrass: document.getElementById('prop-requires-grass').checked,
         },
-        tags: [],
+        tags,
         rarity: parseInt(document.getElementById('prop-rarity').value) / 100,
         minWorldArea: parseInt(document.getElementById('prop-min-area').value) || 0,
         maxInstances: parseInt(document.getElementById('prop-max').value),
