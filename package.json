@@ -41,6 +41,14 @@
       {
         "command": "codemon.showSpriteConfig",
         "title": "CodeMon: Open Sprite Configuration"
+      },
+      {
+        "command": "codemon.regenerateMap",
+        "title": "CodeMon: Regenerate Map (New Seed)"
+      },
+      {
+        "command": "codemon.regenerateMapWithSeed",
+        "title": "CodeMon: Regenerate Map (Enter Seed)"
       }
     ],
     "viewsContainers": {

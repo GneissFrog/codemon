@@ -748,6 +748,126 @@
       "rarity": 0.5,
       "minWorldArea": 300,
       "maxInstances": -1
+    },
+    {
+      "id": "wood-bridge-ns",
+      "name": "Wood Bridge (N-S)",
+      "category": "connector",
+      "width": 1,
+      "height": 3,
+      "tiles": [
+        { "x": 0, "y": 0, "layer": 1, "type": "bridge", "spriteId": "bridges/bridge-v-end-t" },
+        { "x": 0, "y": 1, "layer": 1, "type": "bridge", "spriteId": "bridges/bridge-v-mid-a" },
+        { "x": 0, "y": 2, "layer": 1, "type": "bridge", "spriteId": "bridges/bridge-v-end-b" }
+      ],
+      "connectionPoints": [
+        { "x": 0, "y": -1, "direction": "north", "type": "path" },
+        { "x": 0, "y": 3, "direction": "south", "type": "path" }
+      ],
+      "placement": {
+        "minDistFromPlots": 0,
+        "minDistFromSame": 0,
+        "minDistFromAny": 0,
+        "affinity": "any",
+        "allowOverlapWater": true,
+        "allowOverlapDecorations": false,
+        "requiresGrass": false
+      },
+      "tags": ["water-crossing", "north-south"],
+      "rarity": 0.8,
+      "minWorldArea": 0,
+      "maxInstances": -1
+    },
+    {
+      "id": "wood-bridge-ew",
+      "name": "Wood Bridge (E-W)",
+      "category": "connector",
+      "width": 3,
+      "height": 1,
+      "tiles": [
+        { "x": 0, "y": 0, "layer": 1, "type": "bridge", "spriteId": "bridges/bridge-h-end-l" },
+        { "x": 1, "y": 0, "layer": 1, "type": "bridge", "spriteId": "bridges/bridge-h-mid-a" },
+        { "x": 2, "y": 0, "layer": 1, "type": "bridge", "spriteId": "bridges/bridge-h-end-r" }
+      ],
+      "connectionPoints": [
+        { "x": -1, "y": 0, "direction": "west", "type": "path" },
+        { "x": 3, "y": 0, "direction": "east", "type": "path" }
+      ],
+      "placement": {
+        "minDistFromPlots": 0,
+        "minDistFromSame": 0,
+        "minDistFromAny": 0,
+        "affinity": "any",
+        "allowOverlapWater": true,
+        "allowOverlapDecorations": false,
+        "requiresGrass": false
+      },
+      "tags": ["water-crossing", "east-west"],
+      "rarity": 0.8,
+      "minWorldArea": 0,
+      "maxInstances": -1
+    },
+    {
+      "id": "wood-bridge-long-ns",
+      "name": "Long Wood Bridge (N-S)",
+      "category": "connector",
+      "width": 1,
+      "height": 5,
+      "tiles": [
+        { "x": 0, "y": 0, "layer": 1, "type": "bridge", "spriteId": "bridges/bridge-v-end-t" },
+        { "x": 0, "y": 1, "layer": 1, "type": "bridge", "spriteId": "bridges/bridge-v-mid-a" },
+        { "x": 0, "y": 2, "layer": 1, "type": "bridge", "spriteId": "bridges/bridge-v-mid-b" },
+        { "x": 0, "y": 3, "layer": 1, "type": "bridge", "spriteId": "bridges/bridge-v-mid-a" },
+        { "x": 0, "y": 4, "layer": 1, "type": "bridge", "spriteId": "bridges/bridge-v-end-b" }
+      ],
+      "connectionPoints": [
+        { "x": 0, "y": -1, "direction": "north", "type": "path" },
+        { "x": 0, "y": 5, "direction": "south", "type": "path" }
+      ],
+      "placement": {
+        "minDistFromPlots": 0,
+        "minDistFromSame": 0,
+        "minDistFromAny": 0,
+        "affinity": "any",
+        "allowOverlapWater": true,
+        "allowOverlapDecorations": false,
+        "requiresGrass": false
+      },
+      "tags": ["water-crossing", "north-south"],
+      "rarity": 0.6,
+      "minWorldArea": 0,
+      "maxInstances": -1
+    },
+    {
+      "id": "wood-bridge-long-ew",
+      "name": "Long Wood Bridge (E-W)",
+      "category": "connector",
+      "width": 5,
+      "height": 1,
+      "tiles": [
+        { "x": 0, "y": 0, "layer": 1, "type": "bridge", "spriteId": "bridges/bridge-h-end-l" },
+        { "x": 1, "y": 0, "layer": 1, "type": "bridge", "spriteId": "bridges/bridge-h-mid-a" },
+        { "x": 2, "y": 0, "layer": 1, "type": "bridge", "spriteId": "bridges/bridge-h-mid-b" },
+        { "x": 3, "y": 0, "layer": 1, "type": "bridge", "spriteId": "bridges/bridge-h-mid-a" },
+        { "x": 4, "y": 0, "layer": 1, "type": "bridge", "spriteId": "bridges/bridge-h-end-r" }
+      ],
+      "connectionPoints": [
+        { "x": -1, "y": 0, "direction": "west", "type": "path" },
+        { "x": 5, "y": 0, "direction": "east", "type": "path" }
+      ],
+      "placement": {
+        "minDistFromPlots": 0,
+        "minDistFromSame": 0,
+        "minDistFromAny": 0,
+        "affinity": "any",
+        "allowOverlapWater": true,
+        "allowOverlapDecorations": false,
+        "requiresGrass": false
+      },
+      "tags": ["water-crossing", "east-west"],
+      "rarity": 0.6,
+      "minWorldArea": 0,
+      "maxInstances": -1
     }
   ]
 }

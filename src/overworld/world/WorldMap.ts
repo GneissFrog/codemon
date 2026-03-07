@@ -83,6 +83,14 @@ export class WorldMap {
   }
 
   /**
+   * Remove a tile at world coordinates
+   */
+  removeTile(x: number, y: number, layer: number = 0): boolean {
+    const key = `${x},${y},${layer}`;
+    return this.tiles.delete(key);
+  }
+
+  /**
    * Clear all tiles and plots
    */
   clearTiles(): void {

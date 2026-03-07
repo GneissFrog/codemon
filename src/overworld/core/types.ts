@@ -169,7 +169,8 @@ export type ModuleCategory =
   | 'environment'    // Ponds, clearings, groves
   | 'connector'      // Bridges, crossroads, path features
   | 'decorative'     // Vignettes, arrangements
-  | 'landmark';      // Points of interest, unique features
+  | 'landmark'       // Points of interest, unique features
+  | 'vegetation';    // Trees, bushes, stumps — high-volume natural fill
 
 export type ConnectionType = 'path' | 'grass' | 'water' | 'fence' | 'any';
 

@@ -300,15 +300,18 @@ export class Autotiler {
     currentTerrain: TileType,
     getTileType: (checkX: number, checkY: number, layer?: number) => TileType | null
   ): TerrainTransition | null {
+    // Use the terrain's configured layer for neighbor lookups
+    const config = this.terrainConfigs.get(currentTerrain);
+    const layer = config?.layer;
     const neighbors = [
-      getTileType(x, y - 1, 0),       // N
-      getTileType(x + 1, y - 1, 0),   // NE
-      getTileType(x + 1, y, 0),       // E
-      getTileType(x + 1, y + 1, 0),   // SE
-      getTileType(x, y + 1, 0),       // S
-      getTileType(x - 1, y + 1, 0),   // SW
-      getTileType(x - 1, y, 0),       // W
-      getTileType(x - 1, y - 1, 0),   // NW
+      getTileType(x, y - 1, layer),       // N
+      getTileType(x + 1, y - 1, layer),   // NE
+      getTileType(x + 1, y, layer),       // E
+      getTileType(x + 1, y + 1, layer),   // SE
+      getTileType(x, y + 1, layer),       // S
+      getTileType(x - 1, y + 1, layer),   // SW
+      getTileType(x - 1, y, layer),       // W
+      getTileType(x - 1, y - 1, layer),   // NW
     ];
 
     for (const neighborType of neighbors) {

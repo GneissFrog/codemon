@@ -204,6 +204,27 @@ function registerCommands(context: vscode.ExtensionContext): void {
     })
   );
 
+  // Regenerate map with new seed
+  context.subscriptions.push(
+    vscode.commands.registerCommand('codemon.regenerateMap', () => {
+      regenerateMap();
+    })
+  );
+
+  // Regenerate map with specific seed (prompted)
+  context.subscriptions.push(
+    vscode.commands.registerCommand('codemon.regenerateMapWithSeed', async () => {
+      const input = await vscode.window.showInputBox({
+        prompt: 'Enter a numeric seed for map generation',
+        placeHolder: 'e.g. 12345',
+        validateInput: (v) => isNaN(Number(v)) ? 'Must be a number' : undefined,
+      });
+      if (input !== undefined) {
+        regenerateMap(Number(input));
+      }
+    })
+  );
+
   // Install hooks command
   context.subscriptions.push(
     vscode.commands.registerCommand('codemon.installHooks', async () => {
@@ -326,6 +347,19 @@ function sendMapUpdate(): void {
   const serializedWorld = worldMap.serialize();
 
   gameViewPanel?.updateMap(layout, serializedWorld);
+  console.log(`[CodeMon Map] Generated with seed: ${worldGenerator.getSeed()}`);
+}
+
+/**
+ * Regenerate the world map with a new random seed.
+ */
+function regenerateMap(seed?: number): void {
+  if (!worldGenerator) {
+    sendMapUpdate();
+    return;
+  }
+  worldGenerator.setSeed(seed ?? Date.now());
+  sendMapUpdate();
 }
 
 /**

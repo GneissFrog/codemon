@@ -808,7 +808,7 @@
           "x": 128,
           "y": 0,
           "cols": 2,
-          "rows": 5,
+          "rows": 4,
           "cellSize": 16,
           "cells": [
             {
@@ -930,107 +930,6 @@
                 "northwest": false
               },
               "spriteName": "t_9_3"
-            },
-            {
-              "x": 128,
-              "y": 64,
-              "connections": {
-                "north": true,
-                "northeast": false,
-                "east": true,
-                "southeast": false,
-                "south": true,
-                "southwest": false,
-                "west": true,
-                "northwest": false
-              },
-              "spriteName": "t_8_4"
-            },
-            {
-              "x": 144,
-              "y": 64,
-              "connections": {
-                "north": true,
-                "northeast": false,
-                "east": true,
-                "southeast": false,
-                "south": true,
-                "southwest": false,
-                "west": true,
-                "northwest": false
-              },
-              "spriteName": "t_9_4"
-            }
-          ]
-        },
-        {
-          "id": "zone-1772775515920",
-          "name": "Zone 9",
-          "x": 0,
-          "y": 64,
-          "cols": 4,
-          "rows": 1,
-          "cellSize": 16,
-          "cells": [
-            {
-              "x": 0,
-              "y": 64,
-              "connections": {
-                "north": true,
-                "northeast": false,
-                "east": false,
-                "southeast": false,
-                "south": true,
-                "southwest": false,
-                "west": false,
-                "northwest": false
-              },
-              "spriteName": "t_0_4"
-            },
-            {
-              "x": 16,
-              "y": 64,
-              "connections": {
-                "north": false,
-                "northeast": false,
-                "east": true,
-                "southeast": false,
-                "south": false,
-                "southwest": false,
-                "west": true,
-                "northwest": false
-              },
-              "spriteName": "t_1_4"
-            },
-            {
-              "x": 32,
-              "y": 64,
-              "connections": {
-                "north": false,
-                "northeast": false,
-                "east": false,
-                "southeast": false,
-                "south": false,
-                "southwest": false,
-                "west": false,
-                "northwest": false
-              },
-              "spriteName": "t_2_4"
-            },
-            {
-              "x": 48,
-              "y": 64,
-              "connections": {
-                "north": false,
-                "northeast": false,
-                "east": false,
-                "southeast": false,
-                "south": false,
-                "southwest": false,
-                "west": false,
-                "northwest": false
-              },
-              "spriteName": "t_3_4"
             }
           ]
         },
@@ -1072,6 +971,32 @@
                 "northwest": true
               },
               "spriteName": "t_10_3"
+            }
+          ]
+        },
+        {
+          "id": "zone-1772796910734",
+          "name": "Zone 10",
+          "x": 128,
+          "y": 64,
+          "cols": 1,
+          "rows": 1,
+          "cellSize": 16,
+          "cells": [
+            {
+              "x": 128,
+              "y": 64,
+              "connections": {
+                "north": true,
+                "northeast": false,
+                "east": true,
+                "southeast": false,
+                "south": true,
+                "southwest": false,
+                "west": true,
+                "northwest": false
+              },
+              "spriteName": "t_8_4"
             }
           ]
         }

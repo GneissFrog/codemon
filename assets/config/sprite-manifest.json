@@ -14,7 +14,8 @@
     "water": "water",
     "plants": "plants",
     "biome": "biome",
-    "paths": "paths"
+    "paths": "paths",
+    "bridges": "bridges"
   },
   "spritesheets": {
     "claude-actions": {
@@ -1327,7 +1328,7 @@
       }
     },
     "grass": {
-      "image": "assets/sprites/tilesets/Grass.png",
+      "image": "assets/sprites/tilesets/ground tiles/New tiles/Grass_Hill_Tiles_v2.png",
       "dimensions": {
         "width": 176,
         "height": 112
@@ -1773,6 +1774,31 @@
           "w": 48,
           "h": 48
         }
+      }
+    },
+    "bridges": {
+      "image": "assets/sprites/objects/Wood_Bridge.png",
+      "dimensions": {
+        "width": 80,
+        "height": 48
+      },
+      "frameSize": {
+        "width": 16,
+        "height": 16
+      },
+      "grid": {
+        "cols": 5,
+        "rows": 3
+      },
+      "sprites": {
+        "bridge-h-end-l": { "x": 0, "y": 0, "w": 16, "h": 16 },
+        "bridge-h-mid-a": { "x": 16, "y": 0, "w": 16, "h": 16 },
+        "bridge-h-mid-b": { "x": 32, "y": 0, "w": 16, "h": 16 },
+        "bridge-h-end-r": { "x": 48, "y": 0, "w": 16, "h": 16 },
+        "bridge-v-end-t": { "x": 0, "y": 16, "w": 16, "h": 16 },
+        "bridge-v-mid-a": { "x": 16, "y": 16, "w": 16, "h": 16 },
+        "bridge-v-mid-b": { "x": 32, "y": 16, "w": 16, "h": 16 },
+        "bridge-v-end-b": { "x": 48, "y": 16, "w": 16, "h": 16 }
       }
     }
   },

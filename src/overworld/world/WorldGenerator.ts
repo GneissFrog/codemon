@@ -181,6 +181,7 @@ export class WorldGenerator {
   private placedModules: PlacedModuleInfo[] = [];
   private autotiler: Autotiler;
   private seed: number;
+  private subIslandSeeds: Array<{ cx: number; cy: number; radius: number }> | null = null;
 
   constructor(
     map: WorldMap,
@@ -299,8 +300,14 @@ export class WorldGenerator {
     // ── PHASE 1: TERRAIN FOUNDATION ──
     // All terrain tiles placed with default sprites, then autotiled.
 
-    // 5. Fill water base + island-shaped grass
+    // 4.5 Pre-compute sub-island seed positions for archipelago generation
+    this.computeSubIslandSeeds(bounds, plotRects);
+
+    // 5. Fill water base + archipelago island-shaped grass
     this.fillGround(bounds, plotRects);
+
+    // 5.5 Inland ponds on larger islands
+    this.generateWater(bounds, plotRects);
 
     // 6. Place tilled dirt inside directory plot areas
     for (const rect of plotRects) {
@@ -320,11 +327,14 @@ export class WorldGenerator {
       this.placedModules = placeModules(this.moduleRegistry, placerCtx);
     }
 
-    // 8. Path network (tiles placed with default sprites)
-    this.generatePaths();
+    // 8. Path network with water-crossing bridges
+    this.generatePaths(plotRects);
 
     // 9. Unified autotile pass — resolves sprites for ALL terrain types
     this.autoTileAllTerrain();
+
+    // Clean up generation state
+    this.subIslandSeeds = null;
 
     // ── PHASE 2: WORLD OBJECTS ──
     // Props, structures, and decorations placed on top of terrain.
@@ -366,14 +376,14 @@ export class WorldGenerator {
 
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
     for (const rect of plotRects) {
-      minX = Math.min(minX, rect.x - 2); // -2 for fence + margin
-      minY = Math.min(minY, rect.y - 2);
-      maxX = Math.max(maxX, rect.x + rect.width + 2);
-      maxY = Math.max(maxY, rect.y + rect.height + 2);
+      minX = Math.min(minX, rect.x - 3); // -3 for fence + island margin
+      minY = Math.min(minY, rect.y - 3);
+      maxX = Math.max(maxX, rect.x + rect.width + 3);
+      maxY = Math.max(maxY, rect.y + rect.height + 3);
     }
 
-    // Add generous grass margin around all plots
-    const margin = 6;
+    // Generous margin for archipelago water border + sub-islands
+    const margin = 10;
     return {
       minX: minX - margin,
       minY: minY - margin,
@@ -433,11 +443,15 @@ export class WorldGenerator {
 
   /**
    * Determine if a tile is part of the island landmass.
-   * Guaranteed: all plot rects (with margin) are land.
-   * Edges: noise-modulated distance falloff creates organic coastline.
+   *
+   * Multi-source archipelago field:
+   *  1. Plot buffer — tiles near any plot are always land
+   *  2. Plot island blobs — each plot radiates influence; nearby plots merge
+   *  3. Domain-warped noise field — creates broad land/water zones
+   *  4. Decorative sub-islands — small islands in open water
    */
   private isLandTile(x: number, y: number, bounds: WorldBounds, plotRects: PlotRect[]): boolean {
-    // Any tile near a plot is always land (plot + fence + 1 tile buffer)
+    // ── Source 1: Plot buffer zones (guaranteed land) ──
     for (const plot of plotRects) {
       if (x >= plot.x - 3 && x <= plot.x + plot.width + 2 &&
           y >= plot.y - 3 && y <= plot.y + plot.height + 2) {
@@ -445,20 +459,112 @@ export class WorldGenerator {
       }
     }
 
-    // Normalized distance from world center (0 at center, ~1 at edges)
-    const cx = (bounds.minX + bounds.maxX) / 2;
-    const cy = (bounds.minY + bounds.maxY) / 2;
-    const hw = Math.max(1, (bounds.maxX - bounds.minX) / 2);
-    const hh = Math.max(1, (bounds.maxY - bounds.minY) / 2);
-    const dx = (x - cx) / hw;
-    const dy = (y - cy) / hh;
-    const distFromCenter = Math.sqrt(dx * dx + dy * dy);
+    // ── Source 2: Per-plot island blobs ──
+    // Each plot radiates an island shape; nearby plots accumulate influence
+    // so clusters naturally merge into larger islands.
+    let plotInfluence = 0;
+    for (const plot of plotRects) {
+      const pcx = plot.x + plot.width / 2;
+      const pcy = plot.y + plot.height / 2;
+      const plotRadius = Math.sqrt(plot.width * plot.width + plot.height * plot.height) / 2 + 5;
+      const dx = x - pcx;
+      const dy = y - pcy;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist < plotRadius) {
+        const t = dist / plotRadius;
+        plotInfluence += (1 - t * t); // quadratic falloff, accumulates
+      }
+    }
+    const coastNoise = noise2d(x * 0.15 + 50, y * 0.15 + 50) * 0.4;
+    if (plotInfluence > 0.3 + coastNoise) {
+      return true;
+    }
 
-    // Noise-modulated falloff for organic coastline
-    const noiseVal = noise2d(x * 0.12, y * 0.12);
-    const threshold = 0.85 + noiseVal * 0.25;
+    // ── Source 3: Domain-warped noise field ──
+    // Low-frequency noise with domain warping for organic land/water zones
+    const warpX = noise2d(x * 0.04 + 100, y * 0.04 + 200) * 6;
+    const warpY = noise2d(x * 0.04 + 300, y * 0.04 + 400) * 6;
+    const landNoise = fbmNoise((x + warpX) * 0.06, (y + warpY) * 0.06, 3);
 
-    return distFromCenter < threshold;
+    // Threshold scales with world size: larger worlds get more water channels
+    const worldW = bounds.maxX - bounds.minX;
+    const worldH = bounds.maxY - bounds.minY;
+    const worldArea = worldW * worldH;
+    const baseThreshold = worldArea > 2000 ? 0.52 : worldArea > 800 ? 0.48 : 0.45;
+
+    if (landNoise > baseThreshold) {
+      // Edge falloff — prevent land at world bounds
+      const cx = (bounds.minX + bounds.maxX) / 2;
+      const cy = (bounds.minY + bounds.maxY) / 2;
+      const hw = Math.max(1, (bounds.maxX - bounds.minX) / 2);
+      const hh = Math.max(1, (bounds.maxY - bounds.minY) / 2);
+      const edgeDx = (x - cx) / hw;
+      const edgeDy = (y - cy) / hh;
+      const edgeDist = Math.sqrt(edgeDx * edgeDx + edgeDy * edgeDy);
+      if (edgeDist < 0.92) {
+        return true;
+      }
+    }
+
+    // ── Source 4: Decorative sub-islands ──
+    return this.isSubIsland(x, y);
+  }
+
+  // ─── Sub-Island System ──────────────────────────────────────────────────
+
+  /**
+   * Pre-compute sub-island seed positions for decorative mini-islands.
+   * Seeds are placed far from plots in open water areas.
+   */
+  private computeSubIslandSeeds(bounds: WorldBounds, plotRects: PlotRect[]): void {
+    this.subIslandSeeds = [];
+    const worldW = bounds.maxX - bounds.minX;
+    const worldH = bounds.maxY - bounds.minY;
+    const worldArea = worldW * worldH;
+
+    // Number of sub-islands scales with world size (2-6)
+    const count = Math.min(6, Math.max(2, Math.floor(worldArea / 500)));
+
+    for (let i = 0; i < count * 3; i++) {
+      if (this.subIslandSeeds.length >= count) break;
+
+      // Deterministic positions from hash
+      const hx = hash2d(i * 7 + 1000, i * 13 + 2000);
+      const hy = hash2d(i * 13 + 3000, i * 7 + 4000);
+      const cx = bounds.minX + 4 + hx * (worldW - 8);
+      const cy = bounds.minY + 4 + hy * (worldH - 8);
+
+      // Must be far enough from all plots (at least 10 tiles)
+      let tooClose = false;
+      for (const plot of plotRects) {
+        const dx = cx - (plot.x + plot.width / 2);
+        const dy = cy - (plot.y + plot.height / 2);
+        if (Math.sqrt(dx * dx + dy * dy) < 10) {
+          tooClose = true;
+          break;
+        }
+      }
+      if (tooClose) continue;
+
+      // Small radius: 2-4 tiles
+      const radius = 2 + hash2d(i * 17, i * 23) * 2;
+      this.subIslandSeeds.push({ cx, cy, radius });
+    }
+  }
+
+  /** Check if a tile falls within a decorative sub-island */
+  private isSubIsland(x: number, y: number): boolean {
+    if (!this.subIslandSeeds) return false;
+    for (const seed of this.subIslandSeeds) {
+      const dx = x - seed.cx;
+      const dy = y - seed.cy;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      const noiseOffset = noise2d(x * 0.3 + 500, y * 0.3 + 500) * 1.2;
+      if (dist < seed.radius + noiseOffset) {
+        return true;
+      }
+    }
+    return false;
   }
 
   // ─── Plot Spacing & Jitter ──────────────────────────────────────────────
@@ -752,26 +858,37 @@ export class WorldGenerator {
   }
 
   /**
-   * Create fence around a plot
+   * Create fence around a plot.
+   * Places grass on LAYER_GROUND beneath each fence so grass shows
+   * through fence sprite transparency instead of water.
    */
   private createFence(startX: number, startY: number, width: number, height: number): void {
+    const grassConfig = this.autotiler.getTerrainConfig('grass');
+    const grassSprite = `${grassConfig?.spritesheet || 'grass'}/${grassConfig?.defaultTile || 't_1_1'}`;
+
+    const placeFence = (x: number, y: number, spriteId: string) => {
+      // Ensure grass underneath on LAYER_GROUND (replaces water)
+      this.map.setTile(x, y, 'grass', grassSprite, 0, LAYER_GROUND);
+      this.map.setTile(x, y, 'fence', spriteId, 0, LAYER_TERRAIN);
+    };
+
     // Top and bottom fences
     for (let x = 0; x < width; x++) {
-      this.map.setTile(startX + x, startY - 1, 'fence', 'fences/fence-horizontal', 0, LAYER_TERRAIN);
-      this.map.setTile(startX + x, startY + height, 'fence', 'fences/fence-horizontal', 0, LAYER_TERRAIN);
+      placeFence(startX + x, startY - 1, 'fences/fence-horizontal');
+      placeFence(startX + x, startY + height, 'fences/fence-horizontal');
     }
 
     // Left and right fences (excluding corners)
     for (let y = 0; y < height; y++) {
-      this.map.setTile(startX - 1, startY + y, 'fence', 'fences/fence-vertical', 0, LAYER_TERRAIN);
-      this.map.setTile(startX + width, startY + y, 'fence', 'fences/fence-vertical', 0, LAYER_TERRAIN);
+      placeFence(startX - 1, startY + y, 'fences/fence-vertical');
+      placeFence(startX + width, startY + y, 'fences/fence-vertical');
     }
 
     // Corner posts
-    this.map.setTile(startX - 1, startY - 1, 'fence', 'fences/fence-corner-tl', 0, LAYER_TERRAIN);
-    this.map.setTile(startX + width, startY - 1, 'fence', 'fences/fence-corner-tr', 0, LAYER_TERRAIN);
-    this.map.setTile(startX - 1, startY + height, 'fence', 'fences/fence-corner-bl', 0, LAYER_TERRAIN);
-    this.map.setTile(startX + width, startY + height, 'fence', 'fences/fence-corner-br', 0, LAYER_TERRAIN);
+    placeFence(startX - 1, startY - 1, 'fences/fence-corner-tl');
+    placeFence(startX + width, startY - 1, 'fences/fence-corner-tr');
+    placeFence(startX - 1, startY + height, 'fences/fence-corner-bl');
+    placeFence(startX + width, startY + height, 'fences/fence-corner-br');
   }
 
   // ─── Crop Helpers ─────────────────────────────────────────────────────────
@@ -815,9 +932,10 @@ export class WorldGenerator {
   // ─── Water Generation ─────────────────────────────────────────────────────
 
   /**
-   * Generate 1-3 organic water features in open areas
+   * Generate 1-3 organic water features (ponds) in open grass areas on islands.
+   * Uses plotRects for distance scoring since Plot records aren't created yet.
    */
-  private generateWater(bounds: WorldBounds): void {
+  private generateWater(bounds: WorldBounds, plotRects: PlotRect[]): void {
     const maxTileX = bounds.maxX;
     const maxTileY = bounds.maxY;
     const minTileX = bounds.minX;
@@ -825,7 +943,7 @@ export class WorldGenerator {
 
     // Score macro cells to find open areas far from plots
     const cellSize = 6;
-    const plots = this.map.getAllPlots().filter(p => p.isDirectory);
+    const plots = plotRects;
 
     interface PondCandidate {
       cx: number;
@@ -837,6 +955,10 @@ export class WorldGenerator {
 
     for (let cy = minTileY + 2; cy < maxTileY - 2; cy += cellSize) {
       for (let cx = minTileX + 2; cx < maxTileX - 2; cx += cellSize) {
+        // Only consider positions on land (grass on terrain layer)
+        const terrainTile = this.map.getTile(cx, cy, LAYER_TERRAIN);
+        if (!terrainTile || terrainTile.type !== 'grass') continue;
+
         // Score = minimum distance to any plot
         let minDist = Infinity;
         for (const plot of plots) {
@@ -879,16 +1001,12 @@ export class WorldGenerator {
       placedPonds.push({ cx: candidate.cx, cy: candidate.cy });
     }
 
-    // Fallback: if no good candidates, place one near the edge
-    if (placedPonds.length === 0) {
-      const pondCenterX = Math.floor(minTileX + worldWidth * 0.85);
-      const pondCenterY = Math.floor(minTileY + worldHeight * 0.8);
-      this.placeOrganicPond(pondCenterX, pondCenterY, 2);
-    }
+    // No fallback needed — in archipelago layout, water already exists between islands
   }
 
   /**
-   * Place a single pond with noise-modulated organic shape
+   * Place a single pond with noise-modulated organic shape.
+   * Removes grass tiles on LAYER_TERRAIN to reveal water base on LAYER_GROUND.
    */
   private placeOrganicPond(centerX: number, centerY: number, baseRadius: number): void {
     const scanRadius = baseRadius + 2;
@@ -896,22 +1014,15 @@ export class WorldGenerator {
     for (let y = centerY - scanRadius; y <= centerY + scanRadius; y++) {
       for (let x = centerX - scanRadius; x <= centerX + scanRadius; x++) {
         const dist = Math.sqrt((x - centerX) ** 2 + (y - centerY) ** 2);
-        // Noise-modulated threshold for irregular edges
         const threshold = baseRadius + noise2d(x * 0.5, y * 0.5) * 1.5 - 0.5;
 
         if (dist <= threshold) {
-          // Don't overwrite tilled dirt, fences, or crops
+          // Only carve ponds out of grass tiles (not tilled, fences, etc.)
           const terrainTile = this.map.getTile(x, y, LAYER_TERRAIN);
-          const cropTile = this.map.getTile(x, y, LAYER_CROPS);
-          if (terrainTile || cropTile) continue;
+          if (!terrainTile || terrainTile.type !== 'grass') continue;
 
-          const groundTile = this.map.getTile(x, y, LAYER_GROUND);
-          if (groundTile && groundTile.type === 'tilled') continue;
-
-          const waterConfig = this.autotiler.getTerrainConfig('water');
-          const waterTile = waterConfig?.defaultTile || 't_0_0';
-          const waterSheet = waterConfig?.spritesheet || 'water';
-          this.map.setTile(x, y, 'water', `${waterSheet}/${waterTile}`, 0, LAYER_GROUND);
+          // Remove grass to expose water base beneath
+          this.map.removeTile(x, y, LAYER_TERRAIN);
         }
       }
     }
@@ -921,11 +1032,10 @@ export class WorldGenerator {
 
   /**
    * Generate paths connecting all directory plots using MST.
-   * All plots are guaranteed to be connected.
+   * Paths crossing water get bridge tiles; module-driven crossings when available.
    */
-  private generatePaths(): void {
-    const plots = this.map.getAllPlots().filter(p => p.isDirectory);
-    if (plots.length < 2) return;
+  private generatePaths(plotRects: PlotRect[]): void {
+    if (plotRects.length < 2) return;
 
     // Build edges between all pairs
     interface Edge {
@@ -935,10 +1045,10 @@ export class WorldGenerator {
     }
 
     const edges: Edge[] = [];
-    for (let i = 0; i < plots.length; i++) {
-      for (let j = i + 1; j < plots.length; j++) {
-        const a = plots[i];
-        const b = plots[j];
+    for (let i = 0; i < plotRects.length; i++) {
+      for (let j = i + 1; j < plotRects.length; j++) {
+        const a = plotRects[i];
+        const b = plotRects[j];
         const dx = (b.x + b.width / 2) - (a.x + a.width / 2);
         const dy = (b.y + b.height / 2) - (a.y + a.height / 2);
         const dist = Math.abs(dx) + Math.abs(dy);
@@ -950,7 +1060,7 @@ export class WorldGenerator {
     edges.sort((a, b) => a.dist - b.dist);
 
     // MST using Union-Find
-    const uf = new UnionFind(plots.length);
+    const uf = new UnionFind(plotRects.length);
     const mstEdges: Edge[] = [];
     const extraEdges: Edge[] = [];
 
@@ -958,53 +1068,156 @@ export class WorldGenerator {
       if (uf.union(edge.i, edge.j)) {
         mstEdges.push(edge);
       } else if (extraEdges.length < 2 && edge.dist < edges[0].dist * 3) {
-        // Add up to 2 short extra edges for loops
         extraEdges.push(edge);
       }
     }
 
     const allPathEdges = [...mstEdges, ...extraEdges];
 
-    // Place Manhattan paths for each edge
-    for (const edge of allPathEdges) {
-      const plotA = plots[edge.i];
-      const plotB = plots[edge.j];
+    // Collect water crossing gaps for module-driven bridge placement
+    const waterGaps: Array<{
+      tiles: Array<{ x: number; y: number }>;
+      direction: 'horizontal' | 'vertical';
+    }> = [];
 
-      // Path from center-bottom of one to center-top of other
+    // Place Manhattan paths for each edge, detecting water gaps
+    for (const edge of allPathEdges) {
+      const plotA = plotRects[edge.i];
+      const plotB = plotRects[edge.j];
+
       const startX = Math.floor(plotA.x + plotA.width / 2);
       const startY = plotA.y + plotA.height;
       const endX = Math.floor(plotB.x + plotB.width / 2);
       const endY = plotB.y - 1;
 
-      // Walk horizontally first, then vertically
       const minY = Math.min(startY, endY);
       const maxY = Math.max(startY, endY);
       const minX = Math.min(startX, endX);
       const maxX = Math.max(startX, endX);
 
-      // Horizontal segment
+      // Horizontal segment — walk tile by tile, detect water gaps
+      let currentGap: Array<{ x: number; y: number }> | null = null;
       for (let x = minX; x <= maxX; x++) {
-        this.placePath(x, startY);
+        if (this.isWaterAt(x, startY)) {
+          if (!currentGap) currentGap = [];
+          currentGap.push({ x, y: startY });
+        } else {
+          if (currentGap && currentGap.length > 0) {
+            waterGaps.push({ tiles: currentGap, direction: 'horizontal' });
+          }
+          currentGap = null;
+          this.placePath(x, startY);
+        }
+      }
+      if (currentGap && currentGap.length > 0) {
+        waterGaps.push({ tiles: currentGap, direction: 'horizontal' });
       }
 
-      // Vertical segment
+      // Vertical segment — same gap detection
+      currentGap = null;
       for (let y = minY; y <= maxY; y++) {
-        this.placePath(endX, y);
+        if (this.isWaterAt(endX, y)) {
+          if (!currentGap) currentGap = [];
+          currentGap.push({ x: endX, y });
+        } else {
+          if (currentGap && currentGap.length > 0) {
+            waterGaps.push({ tiles: currentGap, direction: 'vertical' });
+          }
+          currentGap = null;
+          this.placePath(endX, y);
+        }
+      }
+      if (currentGap && currentGap.length > 0) {
+        waterGaps.push({ tiles: currentGap, direction: 'vertical' });
       }
     }
 
-    // Path sprites are resolved by the unified autoTileAllTerrain() pass
+    // Place water crossings for detected gaps
+    for (const gap of waterGaps) {
+      this.placeWaterCrossing(gap);
+    }
+  }
+
+  /** Check if a position is water (no terrain on layer 1, water on layer 0) */
+  private isWaterAt(x: number, y: number): boolean {
+    const terrain = this.map.getTile(x, y, LAYER_TERRAIN);
+    if (terrain) return false; // has terrain — not open water
+    const ground = this.map.getTile(x, y, LAYER_GROUND);
+    return ground !== null && ground.type === 'water';
   }
 
   /**
-   * Place a single path tile if the location is open (grass or water-adjacent)
+   * Place a water crossing (bridge) for a detected gap.
+   * Queries module registry for water-crossing modules; falls back to simple bridge tiles.
+   */
+  private placeWaterCrossing(gap: {
+    tiles: Array<{ x: number; y: number }>;
+    direction: 'horizontal' | 'vertical';
+  }): void {
+    if (gap.tiles.length === 0) return;
+
+    const dirTag = gap.direction === 'vertical' ? 'north-south' : 'east-west';
+    let moduleUsed = false;
+
+    // Try module-driven crossing
+    if (this.moduleRegistry && this.moduleRegistry.size > 0) {
+      const crossingModules = this.moduleRegistry.getByTags(['water-crossing'])
+        .filter(m => m.tags.includes(dirTag));
+
+      if (crossingModules.length > 0) {
+        // Pick a module using deterministic random weighted by rarity
+        const firstTile = gap.tiles[0];
+        const h = hash2d(firstTile.x * 31 + 500, firstTile.y * 17 + 700);
+
+        // Filter by size fit: module's spanning dimension should match gap length
+        const spanDim = gap.direction === 'vertical' ? 'height' : 'width';
+        const fitting = crossingModules.filter(m => m[spanDim] <= gap.tiles.length + 2);
+
+        if (fitting.length > 0) {
+          // Rarity-weighted selection
+          const totalWeight = fitting.reduce((sum, m) => sum + m.rarity, 0);
+          let target = h * totalWeight;
+          let selected = fitting[0];
+          for (const mod of fitting) {
+            target -= mod.rarity;
+            if (target <= 0) { selected = mod; break; }
+          }
+
+          // Stamp module centered on the gap
+          const midIdx = Math.floor(gap.tiles.length / 2);
+          const midTile = gap.tiles[midIdx];
+          const originX = midTile.x - Math.floor(selected.width / 2);
+          const originY = midTile.y - Math.floor(selected.height / 2);
+
+          for (const tile of selected.tiles) {
+            this.map.setTile(
+              originX + tile.x, originY + tile.y,
+              tile.type, tile.spriteId, 0, tile.layer
+            );
+          }
+          moduleUsed = true;
+        }
+      }
+    }
+
+    // Fallback: place simple bridge tiles
+    if (!moduleUsed) {
+      for (const pos of gap.tiles) {
+        const spriteId = gap.direction === 'vertical'
+          ? 'bridges/bridge-v-mid-a'
+          : 'bridges/bridge-h-mid-a';
+        this.map.setTile(pos.x, pos.y, 'bridge', spriteId, 0, LAYER_TERRAIN);
+      }
+    }
+  }
+
+  /**
+   * Place a single path tile on grass
    */
   private placePath(x: number, y: number): void {
     const terrainTile = this.map.getTile(x, y, LAYER_TERRAIN);
-    // Only place on grass, not on tilled dirt, fences, or water
     if (!terrainTile || terrainTile.type !== 'grass') return;
 
-    // Don't place on crop locations
     const cropTile = this.map.getTile(x, y, LAYER_CROPS);
     if (cropTile) return;
 
@@ -1052,7 +1265,7 @@ export class WorldGenerator {
 
   /** Terrain types processed by the autotiler */
   private static readonly TERRAIN_TYPES: ReadonlySet<TileType> = new Set([
-    'grass', 'tilled', 'water', 'path',
+    'grass', 'tilled', 'water', 'path', 'bridge',
   ]);
 
   /**

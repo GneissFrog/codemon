@@ -5,10 +5,10 @@
     {
       "type": "grass",
       "spritesheet": "grass",
-      "layer": 0,
+      "layer": 1,
       "defaultSprite": "t_1_1",
       "bitmaskMappings": [
-        "t_3_4",
+        "t_3_3",
         "t_3_2",
         "t_1_1",
         "t_1_1",
@@ -25,7 +25,7 @@
         "t_1_1",
         "t_1_1",
         "t_3_0",
-        "t_0_4",
+        "t_3_1",
         "t_1_1",
         "t_1_1",
         "t_4_0",
@@ -76,7 +76,7 @@
         "t_7_3",
         "t_1_1",
         "t_1_1",
-        "t_1_4",
+        "t_1_3",
         "t_8_3",
         "t_1_1",
         "t_6_3",
@@ -93,7 +93,7 @@
         "t_1_1",
         "t_1_1",
         "t_8_0",
-        "t_9_4",
+        "t_8_4",
         "t_1_1",
         "t_9_3",
         "t_1_1",
@@ -275,7 +275,7 @@
     {
       "type": "tilled",
       "spritesheet": "tilled-dirt",
-      "layer": 0,
+      "layer": 1,
       "defaultSprite": "t_1_1",
       "bitmaskMappings": [
         "t_1_1",
@@ -541,7 +541,7 @@
     {
       "type": "path",
       "spritesheet": "paths",
-      "layer": 0,
+      "layer": 1,
       "defaultSprite": "t_0_0",
       "bitmaskMappings": [
         "t_0_0",
@@ -1072,12 +1072,6 @@
     }
   ],
   "transitions": [
-    {
-      "fromTerrain": "grass",
-      "toTerrain": "water",
-      "edgeSpritesheet": "grass",
-      "priority": 1
-    },
     {
       "fromTerrain": "grass",
       "toTerrain": "tilled",

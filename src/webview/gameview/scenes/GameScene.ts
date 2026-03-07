@@ -657,6 +657,9 @@ export class GameScene extends Phaser.Scene {
       this.addTile(tile);
     }
 
+    // Y-sort the crops layer so objects further down render on top (depth sorting)
+    this.cropsLayer.sort('y');
+
     console.log(`[GameScene] Set ${tiles.length} tiles`);
   }
 

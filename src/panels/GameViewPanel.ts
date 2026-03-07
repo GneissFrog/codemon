@@ -83,6 +83,9 @@ export class GameViewPanel {
             });
           }
           break;
+        case 'regenerateMap':
+          vscode.commands.executeCommand('codemon.regenerateMap');
+          break;
       }
     }, null, this._disposables);
 

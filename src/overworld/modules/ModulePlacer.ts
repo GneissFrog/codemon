@@ -23,25 +23,30 @@ interface ModuleBudget {
   environment: number;
   connector: number;
   decorative: number;
+  vegetation: number;
 }
 
 function computeBudget(worldArea: number, pathCount: number): ModuleBudget {
   if (worldArea < 400) {
     // Very small worlds - minimal modules
-    return { landmark: 0, environment: 0, connector: 0, decorative: Math.floor(worldArea / 200) };
+    return { landmark: 0, environment: 0, connector: 0, decorative: 1, vegetation: 3 };
   }
   return {
     landmark: Math.min(2, Math.floor(worldArea / 3000)),
     environment: Math.floor(worldArea / 500),
     connector: Math.floor(pathCount / 3),
     decorative: Math.floor(worldArea / 200),
+    vegetation: Math.floor(worldArea / 50),  // ~40 for a 2000-tile world
   };
 }
 
 // ─── Deterministic Hash ────────────────────────────────────────────────────
 
+/** Module-level seed — set by placeModules before placement */
+let _placerSeed = 0;
+
 function hash2d(x: number, y: number): number {
-  let h = (x * 374761393 + y * 668265263) >>> 0;
+  let h = (x * 374761393 + y * 668265263 + _placerSeed) >>> 0;
   h = ((h ^ (h >> 13)) * 1274126177) >>> 0;
   h = (h ^ (h >> 16)) >>> 0;
   return (h & 0x7fffffff) / 0x7fffffff;
@@ -168,6 +173,7 @@ export interface PlacerContext {
   worldHeight: number;
   plots: PlotRect[];
   pathCount: number;
+  seed?: number;
 }
 
 export function placeModules(
@@ -175,6 +181,7 @@ export function placeModules(
   ctx: PlacerContext
 ): PlacedModuleInfo[] {
   const { map, worldWidth, worldHeight, plots, pathCount } = ctx;
+  _placerSeed = ctx.seed ?? 0;
   const worldArea = worldWidth * worldHeight;
 
   // Skip modules for very small worlds
@@ -199,12 +206,13 @@ export function placeModules(
     if (tile.type === 'path') pathPositions.add(`${tile.x},${tile.y}`);
   }
 
-  // Get eligible modules sorted by priority: landmarks first, then env, connectors, decorative
+  // Get eligible modules sorted by priority: landmarks first, then env, connectors, vegetation, decorative
   const categoryPriority: Record<ModuleCategory, number> = {
     landmark: 0,
     environment: 1,
     connector: 2,
-    decorative: 3,
+    vegetation: 3,
+    decorative: 4,
   };
 
   const eligible = registry.getEligible(worldArea)
@@ -287,7 +295,7 @@ function findBestPosition(
         let allGrass = true;
         for (let dy = 0; dy < moduleDef.height && allGrass; dy++) {
           for (let dx = 0; dx < moduleDef.width && allGrass; dx++) {
-            const tile = map.getTile(x + dx, y + dy, 0);
+            const tile = map.getTile(x + dx, y + dy, 1) ?? map.getTile(x + dx, y + dy, 0);
             if (!tile || tile.type !== 'grass') {
               // Allow overlap with water/decorations if the module permits
               if (tile?.type === 'water' && placement.allowOverlapWater) continue;
