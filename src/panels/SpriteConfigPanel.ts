@@ -92,6 +92,9 @@ export class SpriteConfigPanel implements vscode.WebviewViewProvider {
         case 'resizeAllSprites':
           await this._resizeAllSprites(message.data as { sheetName: string; newW: number; newH: number });
           break;
+        case 'autofillSprites':
+          await this._autofillSprites(message.data as { sheetName: string; cellW: number; cellH: number });
+          break;
       }
     });
   }
@@ -166,6 +169,7 @@ export class SpriteConfigPanel implements vscode.WebviewViewProvider {
 
         // Reload assets and notify both webviews
         const loader = getAssetLoader(this._extensionUri);
+        loader.dispose();
         await loader.load();
         await this._sendAssets();
         await getGameViewPanel(this._extensionUri).refreshAssets();
@@ -216,6 +220,7 @@ export class SpriteConfigPanel implements vscode.WebviewViewProvider {
       await this._writeManifest(manifest);
 
       const loader = getAssetLoader(this._extensionUri);
+      loader.dispose();
       await loader.load();
       await this._sendAssets();
       await getGameViewPanel(this._extensionUri).refreshAssets();
@@ -224,6 +229,71 @@ export class SpriteConfigPanel implements vscode.WebviewViewProvider {
     } catch (error) {
       console.error('[SpriteConfig] Failed to resize sprites:', error);
       vscode.window.showErrorMessage(`Failed to resize sprites: ${error}`);
+    }
+  }
+
+  /**
+   * Auto-fill: create sprites for grid cells that don't already have one
+   */
+  private async _autofillSprites(data: { sheetName: string; cellW: number; cellH: number }): Promise<void> {
+    try {
+      const manifest = await this._readManifest();
+      const sheets = manifest.spritesheets as Record<string, {
+        dimensions?: { width: number; height: number };
+        sprites: Record<string, { x: number; y: number; w: number; h: number }>;
+      }>;
+
+      const sheet = sheets[data.sheetName];
+      if (!sheet) {
+        vscode.window.showErrorMessage(`Sheet "${data.sheetName}" not found`);
+        return;
+      }
+
+      // Need image dimensions to know how many cells exist
+      if (!sheet.dimensions) {
+        vscode.window.showErrorMessage(`Sheet "${data.sheetName}" has no recorded dimensions`);
+        return;
+      }
+
+      const cols = Math.floor(sheet.dimensions.width / data.cellW);
+      const rows = Math.floor(sheet.dimensions.height / data.cellH);
+
+      // Build a set of occupied positions
+      const occupied = new Set<string>();
+      for (const sprite of Object.values(sheet.sprites)) {
+        occupied.add(`${sprite.x},${sprite.y}`);
+      }
+
+      // Fill empty cells
+      let added = 0;
+      for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+          const x = c * data.cellW;
+          const y = r * data.cellH;
+          if (!occupied.has(`${x},${y}`)) {
+            sheet.sprites[`sprite-${c}-${r}`] = { x, y, w: data.cellW, h: data.cellH };
+            added++;
+          }
+        }
+      }
+
+      if (added === 0) {
+        vscode.window.showInformationMessage(`All ${cols}×${rows} grid cells already have sprites`);
+        return;
+      }
+
+      await this._writeManifest(manifest);
+
+      const loader = getAssetLoader(this._extensionUri);
+      loader.dispose();
+      await loader.load();
+      await this._sendAssets();
+      await getGameViewPanel(this._extensionUri).refreshAssets();
+
+      vscode.window.showInformationMessage(`Added ${added} sprites to "${data.sheetName}" (${cols}×${rows} grid, ${Object.keys(sheet.sprites).length} total)`);
+    } catch (error) {
+      console.error('[SpriteConfig] Failed to auto-fill sprites:', error);
+      vscode.window.showErrorMessage(`Failed to auto-fill sprites: ${error}`);
     }
   }
 
@@ -247,6 +317,7 @@ export class SpriteConfigPanel implements vscode.WebviewViewProvider {
 
         // Reload assets and notify both webviews
         const loader = getAssetLoader(this._extensionUri);
+        loader.dispose();
         await loader.load();
         await this._sendAssets();
         await getGameViewPanel(this._extensionUri).refreshAssets();
@@ -276,6 +347,7 @@ export class SpriteConfigPanel implements vscode.WebviewViewProvider {
 
         // Reload assets and notify both webviews
         const loader = getAssetLoader(this._extensionUri);
+        loader.dispose();
         await loader.load();
         await this._sendAssets();
         await getGameViewPanel(this._extensionUri).refreshAssets();
@@ -1367,6 +1439,7 @@ export class SpriteConfigPanel implements vscode.WebviewViewProvider {
         <span style="color: var(--pixel-muted)">×</span>
         <input type="number" id="grid-height" value="16" min="1" max="64">
         <button class="action-btn" id="btn-resize-all" style="font-size:8px;margin-left:4px;" title="Resize all sprites in this sheet to match the current grid">Resize All</button>
+        <button class="action-btn" id="btn-autofill" style="font-size:8px;margin-left:2px;" title="Create sprites for grid cells that don't have one yet">Auto-fill</button>
       </div>
       <div class="sprite-canvas-container" id="canvas-container">
         <canvas id="sprite-canvas"></canvas>
@@ -1746,12 +1819,10 @@ export class SpriteConfigPanel implements vscode.WebviewViewProvider {
 
     // Unlink Aseprite button
     document.getElementById('unlink-aseprite').onclick = () => {
-      if (confirm('Unlink Aseprite JSON? Animations will revert to manual configuration.')) {
-        vscode.postMessage({
-          type: 'updateAsepriteConfig',
-          data: { sheetName: currentSheet, asepriteConfig: null }
-        });
-      }
+      vscode.postMessage({
+        type: 'updateAsepriteConfig',
+        data: { sheetName: currentSheet, asepriteConfig: null }
+      });
     };
 
     // Handle selected Aseprite JSON path from extension
@@ -1790,7 +1861,7 @@ export class SpriteConfigPanel implements vscode.WebviewViewProvider {
     }
 
     function drawGridOverlay() {
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
       ctx.lineWidth = 1;
 
       // Vertical lines
@@ -2015,10 +2086,18 @@ export class SpriteConfigPanel implements vscode.WebviewViewProvider {
       const sprites = spritesheets[currentSheet] && spritesheets[currentSheet].sprites;
       const count = sprites ? Object.keys(sprites).length : 0;
       if (!count) return;
-      if (!confirm('Resize all ' + count + ' sprites in "' + currentSheet + '" to ' + gridW + '×' + gridH + '?\\n\\nSprite positions will be re-snapped to the new grid.')) return;
       vscode.postMessage({
         type: 'resizeAllSprites',
         data: { sheetName: currentSheet, newW: gridW, newH: gridH }
+      });
+    };
+
+    // Auto-fill button
+    document.getElementById('btn-autofill').onclick = () => {
+      if (!currentSheet) return;
+      vscode.postMessage({
+        type: 'autofillSprites',
+        data: { sheetName: currentSheet, cellW: gridW, cellH: gridH }
       });
     };
 
@@ -2134,7 +2213,7 @@ export class SpriteConfigPanel implements vscode.WebviewViewProvider {
     document.getElementById('btn-update').onclick = () => {
       const spriteName = document.getElementById('editing-sprite-name').textContent;
       if (!currentSheet || spriteName === 'Select a sprite from the list below') {
-        alert('Please select a sprite from the list first');
+        selectedTitle.textContent = 'Select a sprite first';
         return;
       }
 
@@ -2160,11 +2239,11 @@ export class SpriteConfigPanel implements vscode.WebviewViewProvider {
     document.getElementById('btn-add').onclick = () => {
       const spriteName = document.getElementById('add-name').value.trim();
       if (!currentSheet) {
-        alert('Please select a spritesheet first');
+        selectedTitle.textContent = 'Select a spritesheet first';
         return;
       }
       if (!spriteName) {
-        alert('Please enter a sprite name');
+        selectedTitle.textContent = 'Enter a sprite name';
         return;
       }
 
@@ -2193,22 +2272,20 @@ export class SpriteConfigPanel implements vscode.WebviewViewProvider {
     document.getElementById('btn-delete').onclick = () => {
       const spriteName = document.getElementById('editing-sprite-name').textContent;
       if (!currentSheet || spriteName === 'Select a sprite from the list below') {
-        alert('Please select a sprite from the list first');
+        selectedTitle.textContent = 'Select a sprite first';
         return;
       }
 
-      if (confirm(\`Delete sprite "\${spriteName}" from \${currentSheet}?\`)) {
-        vscode.postMessage({
-          type: 'deleteSprite',
-          data: {
-            sheetName: currentSheet,
-            spriteName: spriteName
-          }
-        });
+      vscode.postMessage({
+        type: 'deleteSprite',
+        data: {
+          sheetName: currentSheet,
+          spriteName: spriteName
+        }
+      });
 
-        // Reset the edit fields
-        document.getElementById('editing-sprite-name').textContent = 'Select a sprite from the list below';
-      }
+      // Reset the edit fields
+      document.getElementById('editing-sprite-name').textContent = 'Select a sprite from the list below';
     };
 
     // ─── Message Handling ─────────────────────────────────────────────────

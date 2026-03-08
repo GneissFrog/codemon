@@ -91,6 +91,11 @@
           "type": "webview",
           "id": "codemon.gameViewSettings",
           "name": "Game View Settings"
+        },
+        {
+          "type": "webview",
+          "id": "codemon.cropConfig",
+          "name": "Crop Config"
         }
       ]
     },

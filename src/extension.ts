@@ -19,6 +19,7 @@ import { ModuleEditorPanel, getModuleEditorPanel } from './panels/ModuleEditorPa
 import { StateMachineEditorPanel, getStateMachineEditorPanel } from './panels/StateMachineEditorPanel';
 import { TerrainConfigPanel, getTerrainConfigPanel } from './panels/TerrainConfigPanel';
 import { GameViewSettingsPanel, getGameViewSettingsPanel } from './panels/GameViewSettingsPanel';
+import { CropConfigPanel, getCropConfigPanel } from './panels/CropConfigPanel';
 import { AnimationEditorPanel, getAnimationEditorPanel } from './panels/AnimationEditorPanel';
 import { onSettingsChanged, getSettings } from './core/settings';
 import { ActivityEntry, ToolUseEvent, SubagentStartEvent, SubagentStopEvent } from './core/event-types';
@@ -174,6 +175,15 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.window.registerWebviewViewProvider(
       GameViewSettingsPanel.viewType,
       gameViewSettingsPanel
+    )
+  );
+
+  // Register crop config panel
+  const cropConfigPanel = getCropConfigPanel(extensionUri);
+  context.subscriptions.push(
+    vscode.window.registerWebviewViewProvider(
+      CropConfigPanel.viewType,
+      cropConfigPanel
     )
   );
 
