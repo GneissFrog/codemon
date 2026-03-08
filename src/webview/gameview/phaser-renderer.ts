@@ -204,7 +204,11 @@ export class PhaserRenderer implements Renderer {
           image.src = sheetData.imageUrl;
         });
 
-        // Add to Phaser texture manager
+        // Add to Phaser texture manager (guard against stale registry entries)
+        if (textureManager.exists(name)) {
+          console.warn(`[PhaserRenderer] Texture ${name} still in registry, forcing removal`);
+          textureManager.remove(name);
+        }
         textureManager.addImage(name, image);
 
         // Create frame definitions
@@ -239,6 +243,10 @@ export class PhaserRenderer implements Renderer {
             normalImage.src = sheetData.normalMapUrl;
           });
 
+          // Guard against stale registry entries for normal maps
+          if (textureManager.exists(`${name}_normal`)) {
+            textureManager.remove(`${name}_normal`);
+          }
           textureManager.addImage(`${name}_normal`, normalImage);
           console.log(`[PhaserRenderer] Loaded normal map for: ${name}`);
         }
@@ -333,10 +341,18 @@ export class PhaserRenderer implements Renderer {
   async refreshAssets(assets: WebviewAssetData): Promise<void> {
     console.log('[PhaserRenderer] Refreshing all assets...');
 
-    // Force reload all textures
+    // CRITICAL: Destroy all scene sprites BEFORE removing textures.
+    // Sprites hold direct references to Texture objects; if the textures
+    // are removed/destroyed first, the render loop crashes on null
+    // glTexture / sourceSize when trying to draw stale sprites.
+    if (this.gameScene) {
+      this.gameScene.prepareForTextureRefresh();
+    }
+
+    // Force reload all textures (safe now — no sprites reference them)
     await this.loadSpritesheets(assets, true);
 
-    // Reload animation sets
+    // Reload animation sets (recreates agent sprite with new textures)
     if (this.gameScene && assets.animationSets) {
       this.gameScene.setAnimationSets(assets.animationSets);
     }

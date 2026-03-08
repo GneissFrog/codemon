@@ -305,7 +305,8 @@ export class GameScene extends Phaser.Scene {
     if (this.lightsEnabled && this.textures.exists(`${this.agentSheetName}_normal`)) {
       try {
         this.agentSprite.setPipeline('Light2D');
-        this.agentSprite.normalMap = this.textures.get(`${this.agentSheetName}_normal`);
+        const normalTex = this.textures.get(`${this.agentSheetName}_normal`);
+        if (normalTex) { this.agentSprite.normalMap = normalTex; }
         console.log(`[GameScene] Agent sprite using Light2D pipeline with normal map`);
       } catch (e) {
         console.warn(`[GameScene] Failed to set Light2D pipeline on agent: ${e}`);
@@ -446,7 +447,8 @@ export class GameScene extends Phaser.Scene {
         if (this.lightsEnabled && this.textures.exists(`${this.agentSheetName}_normal`)) {
           try {
             this.agentSprite.setPipeline('Light2D');
-            this.agentSprite.normalMap = this.textures.get(`${this.agentSheetName}_normal`);
+            const normalTex = this.textures.get(`${this.agentSheetName}_normal`);
+            if (normalTex) { this.agentSprite.normalMap = normalTex; }
             console.log(`[GameScene] Agent sprite using Light2D pipeline with normal map`);
           } catch (e) {
             console.warn(`[GameScene] Failed to set Light2D pipeline on agent: ${e}`);
@@ -735,7 +737,8 @@ export class GameScene extends Phaser.Scene {
     if (this.lightsEnabled && this.textures.exists(`${sheet}_normal`)) {
       try {
         sprite.setPipeline('Light2D');
-        sprite.normalMap = this.textures.get(`${sheet}_normal`);
+        const normalTex = this.textures.get(`${sheet}_normal`);
+        if (normalTex) { sprite.normalMap = normalTex; }
       } catch (e) {
         console.warn(`[GameScene] Failed to set Light2D pipeline: ${e}`);
       }
@@ -826,7 +829,8 @@ export class GameScene extends Phaser.Scene {
     if (this.lightsEnabled && this.textures.exists(`${sheet}_normal`)) {
       try {
         sprite.setPipeline('Light2D');
-        sprite.normalMap = this.textures.get(`${sheet}_normal`);
+        const normalTex = this.textures.get(`${sheet}_normal`);
+        if (normalTex) { sprite.normalMap = normalTex; }
       } catch (e) {
         console.warn(`[GameScene] Failed to set Light2D pipeline: ${e}`);
       }
@@ -921,6 +925,54 @@ export class GameScene extends Phaser.Scene {
     this.animatedSprites = [];
   }
 
+  /**
+   * Prepare for a full texture refresh.
+   * Destroys ALL sprites that hold direct references to Texture objects.
+   * Must be called BEFORE textures are removed from the texture manager,
+   * otherwise the render loop will crash on null glTexture / sourceSize
+   * when trying to draw sprites whose textures have been destroyed.
+   */
+  prepareForTextureRefresh(): void {
+    // 1. Destroy all tile sprites (they hold direct texture references)
+    this.clearTiles();
+
+    // 2. Destroy agent sprite (holds texture reference + normalMap)
+    if (this.agentSprite) {
+      this.agentSprite.destroy();
+      this.agentSprite = null;
+      this.agentAnimationsCreated = false;
+      this.animSetsCreated = false;
+      this.currentAgentAnimation = '';
+    }
+
+    // 3. Clear dynamic sprite group (sprites hold texture references)
+    if (this.dynamicSpriteGroup) {
+      this.dynamicSpriteGroup.clear(true, true);
+    }
+
+    // 4. Remove ALL Phaser animations — they cache direct references to
+    //    Phaser.Textures.Frame objects (AnimationFrame.frame). When textures
+    //    are removed, Frame.destroy() sets frame.data = null. Old animations
+    //    still holding those stale Frame refs then crash on
+    //    frame.data.sourceSize (the realWidth getter) during playback.
+    //    Animations are recreated by loadSpritesheets (Aseprite),
+    //    setAnimationSets (agent), and createAnimatedTile (water/tiles).
+    try {
+      const animMap = (this.anims as any).anims; // Phaser CustomMap
+      if (animMap && typeof animMap.getArray === 'function') {
+        const keys = animMap.getArray().map((a: any) => a.key);
+        for (const key of keys) {
+          this.anims.remove(key);
+        }
+        console.log(`[GameScene] Cleared ${keys.length} animations`);
+      }
+    } catch (e) {
+      console.warn('[GameScene] Could not clear animations:', e);
+    }
+
+    console.log('[GameScene] Prepared for texture refresh — all sprites and animations destroyed');
+  }
+
   // ─── Dynamic Sprites using Groups ────────────────────────────────────────
 
   /**
@@ -978,7 +1030,8 @@ export class GameScene extends Phaser.Scene {
     if (this.lightsEnabled && this.textures.exists(`${sheet}_normal`)) {
       try {
         sprite.setPipeline('Light2D');
-        sprite.normalMap = this.textures.get(`${sheet}_normal`);
+        const normalTex = this.textures.get(`${sheet}_normal`);
+        if (normalTex) { sprite.normalMap = normalTex; }
       } catch (e) {
         console.warn(`[GameScene] Failed to set Light2D pipeline: ${e}`);
       }

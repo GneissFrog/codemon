@@ -95,6 +95,9 @@ export class SpriteConfigPanel implements vscode.WebviewViewProvider {
         case 'autofillSprites':
           await this._autofillSprites(message.data as { sheetName: string; cellW: number; cellH: number });
           break;
+        case 'clearAutoSprites':
+          await this._clearAutoSprites(message.data as { sheetName: string });
+          break;
       }
     });
   }
@@ -294,6 +297,51 @@ export class SpriteConfigPanel implements vscode.WebviewViewProvider {
     } catch (error) {
       console.error('[SpriteConfig] Failed to auto-fill sprites:', error);
       vscode.window.showErrorMessage(`Failed to auto-fill sprites: ${error}`);
+    }
+  }
+
+  /**
+   * Clear auto-generated sprites (sprite-{col}-{row} pattern), keeping named sprites
+   */
+  private async _clearAutoSprites(data: { sheetName: string }): Promise<void> {
+    try {
+      const manifest = await this._readManifest();
+      const sheets = manifest.spritesheets as Record<string, {
+        sprites: Record<string, { x: number; y: number; w: number; h: number }>;
+      }>;
+
+      const sheet = sheets[data.sheetName];
+      if (!sheet) {
+        vscode.window.showErrorMessage(`Sheet "${data.sheetName}" not found`);
+        return;
+      }
+
+      const autoPattern = /^sprite-\d+-\d+$/;
+      let removed = 0;
+      for (const name of Object.keys(sheet.sprites)) {
+        if (autoPattern.test(name)) {
+          delete sheet.sprites[name];
+          removed++;
+        }
+      }
+
+      if (removed === 0) {
+        vscode.window.showInformationMessage(`No auto-generated sprites found in "${data.sheetName}"`);
+        return;
+      }
+
+      await this._writeManifest(manifest);
+
+      const loader = getAssetLoader(this._extensionUri);
+      loader.dispose();
+      await loader.load();
+      await this._sendAssets();
+      await getGameViewPanel(this._extensionUri).refreshAssets();
+
+      vscode.window.showInformationMessage(`Removed ${removed} auto-generated sprites from "${data.sheetName}" (${Object.keys(sheet.sprites).length} remaining)`);
+    } catch (error) {
+      console.error('[SpriteConfig] Failed to clear auto sprites:', error);
+      vscode.window.showErrorMessage(`Failed to clear auto sprites: ${error}`);
     }
   }
 
@@ -1440,6 +1488,7 @@ export class SpriteConfigPanel implements vscode.WebviewViewProvider {
         <input type="number" id="grid-height" value="16" min="1" max="64">
         <button class="action-btn" id="btn-resize-all" style="font-size:8px;margin-left:4px;" title="Resize all sprites in this sheet to match the current grid">Resize All</button>
         <button class="action-btn" id="btn-autofill" style="font-size:8px;margin-left:2px;" title="Create sprites for grid cells that don't have one yet">Auto-fill</button>
+        <button class="action-btn danger" id="btn-clear-auto" style="font-size:8px;margin-left:2px;" title="Remove all auto-generated sprites (sprite-X-Y) and keep named ones">Clear Auto</button>
       </div>
       <div class="sprite-canvas-container" id="canvas-container">
         <canvas id="sprite-canvas"></canvas>
@@ -1885,11 +1934,23 @@ export class SpriteConfigPanel implements vscode.WebviewViewProvider {
       if (!currentSheet) return;
       const sheet = spritesheets[currentSheet];
 
-      ctx.strokeStyle = 'rgba(41, 173, 255, 0.8)';
-      ctx.lineWidth = 1;
-
       for (const [name, sprite] of Object.entries(sheet.sprites)) {
-        ctx.strokeRect(sprite.x + 0.5, sprite.y + 0.5, sprite.w - 1, sprite.h - 1);
+        const isSelected = selectedSprite && sprite.x === selectedSprite.x && sprite.y === selectedSprite.y
+          && sprite.w === selectedSprite.w && sprite.h === selectedSprite.h;
+
+        if (isSelected) {
+          // Selected sprite: yellow fill + stroke
+          ctx.fillStyle = 'rgba(255, 220, 40, 0.25)';
+          ctx.fillRect(sprite.x, sprite.y, sprite.w, sprite.h);
+          ctx.strokeStyle = 'rgba(255, 220, 40, 1)';
+          ctx.lineWidth = 2;
+          ctx.strokeRect(sprite.x + 1, sprite.y + 1, sprite.w - 2, sprite.h - 2);
+        } else {
+          // Other sprites: subtle blue outline
+          ctx.strokeStyle = 'rgba(41, 173, 255, 0.5)';
+          ctx.lineWidth = 1;
+          ctx.strokeRect(sprite.x + 0.5, sprite.y + 0.5, sprite.w - 1, sprite.h - 1);
+        }
       }
     }
 
@@ -2013,6 +2074,9 @@ export class SpriteConfigPanel implements vscode.WebviewViewProvider {
             // Highlight in list
             document.querySelectorAll('.sprite-item').forEach(el => el.classList.remove('selected'));
             item.classList.add('selected');
+
+            // Re-render to show selection highlight on canvas
+            renderSpriteViewer();
           };
 
           spriteList.appendChild(item);
@@ -2098,6 +2162,15 @@ export class SpriteConfigPanel implements vscode.WebviewViewProvider {
       vscode.postMessage({
         type: 'autofillSprites',
         data: { sheetName: currentSheet, cellW: gridW, cellH: gridH }
+      });
+    };
+
+    // Clear Auto button
+    document.getElementById('btn-clear-auto').onclick = () => {
+      if (!currentSheet) return;
+      vscode.postMessage({
+        type: 'clearAutoSprites',
+        data: { sheetName: currentSheet }
       });
     };
 
