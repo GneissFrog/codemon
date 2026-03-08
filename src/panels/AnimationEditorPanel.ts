@@ -165,30 +165,35 @@ export class AnimationEditorPanel implements vscode.WebviewViewProvider {
     /* ─── Sprite Palette ─── */
     .palette-section { margin-bottom: 8px; }
     .palette-header {
-      display: flex; justify-content: space-between; align-items: center;
+      display: flex; align-items: center; gap: 4px;
       margin-bottom: 4px;
     }
     .palette-header select {
       flex: 1; font-size: 9px; background: var(--pixel-bg);
       border: 1px solid var(--pixel-border); color: var(--pixel-fg); padding: 3px 4px;
     }
+    .palette-zoom-btn {
+      background: var(--pixel-bg); border: 1px solid var(--pixel-border);
+      color: var(--pixel-fg); cursor: pointer; font-size: 10px;
+      width: 20px; height: 20px; padding: 0; line-height: 18px; text-align: center;
+    }
+    .palette-zoom-btn:hover { background: var(--pixel-bg-light); }
     .palette-filter {
       width: 100%; font-size: 9px; padding: 3px 6px; margin-bottom: 4px;
       background: var(--pixel-bg); border: 1px solid var(--pixel-border);
       color: var(--pixel-fg); font-family: inherit;
     }
     .palette-container {
-      max-height: 200px; overflow-y: auto;
+      max-height: 280px; overflow: auto;
       border: 1px solid var(--pixel-border);
-      padding: 2px;
+      background: repeating-conic-gradient(#222 0% 25%, #1a1a1a 0% 50%) 50% / 16px 16px;
     }
-    .palette-grid { display: flex; flex-wrap: wrap; gap: 1px; }
-    .palette-sprite {
-      width: 24px; height: 24px; cursor: pointer;
-      border: 1px solid transparent; image-rendering: pixelated;
+    .palette-canvas {
+      image-rendering: pixelated;
+      cursor: crosshair;
+      display: block;
     }
-    .palette-sprite:hover { border-color: var(--pixel-accent); }
-    .palette-count { font-size: 8px; color: var(--pixel-muted); margin-top: 2px; }
+    .palette-info { font-size: 8px; color: var(--pixel-muted); margin-top: 2px; display: flex; justify-content: space-between; }
     .palette-hint { font-size: 8px; color: var(--pixel-muted); margin-top: 2px; font-style: italic; }
 
     /* ─── Animation List ─── */
@@ -258,12 +263,14 @@ export class AnimationEditorPanel implements vscode.WebviewViewProvider {
     <div class="section-label">Sprite Palette</div>
     <div class="palette-header">
       <select id="palette-sheet-select"></select>
+      <button class="palette-zoom-btn" id="palette-zoom-out">-</button>
+      <button class="palette-zoom-btn" id="palette-zoom-in">+</button>
     </div>
     <input type="text" class="palette-filter" id="palette-filter" placeholder="Filter sprites...">
-    <div class="palette-container">
-      <div class="palette-grid" id="palette-grid"></div>
+    <div class="palette-container" id="palette-container">
+      <canvas class="palette-canvas" id="palette-canvas"></canvas>
     </div>
-    <div class="palette-count" id="palette-count"></div>
+    <div class="palette-info"><span id="palette-count"></span><span id="palette-clicked"></span></div>
     <div class="palette-hint" id="palette-hint" style="display:none;">Click a sprite to add it as a frame</div>
   </div>
 
@@ -371,10 +378,17 @@ export class AnimationEditorPanel implements vscode.WebviewViewProvider {
     const animSetSheetInfo = document.getElementById('anim-set-sheet-info');
     const paletteSection = document.getElementById('palette-section');
     const paletteSheetSelect = document.getElementById('palette-sheet-select');
-    const paletteGrid = document.getElementById('palette-grid');
+    const paletteCanvas = document.getElementById('palette-canvas');
+    const paletteCtx = paletteCanvas.getContext('2d');
+    paletteCtx.imageSmoothingEnabled = false;
+    const paletteContainer = document.getElementById('palette-container');
     const paletteFilter = document.getElementById('palette-filter');
     const paletteCount = document.getElementById('palette-count');
+    const paletteClicked = document.getElementById('palette-clicked');
     const paletteHint = document.getElementById('palette-hint');
+    let paletteZoom = 2;
+    let paletteGridW = 16;
+    let paletteGridH = 16;
     const clipNameInput = document.getElementById('clip-name-input');
     const clipIsAlias = document.getElementById('clip-is-alias');
     const clipAliasSection = document.getElementById('clip-alias-section');
@@ -411,59 +425,152 @@ export class AnimationEditorPanel implements vscode.WebviewViewProvider {
       if (setSheet && spritesheets[setSheet]) {
         paletteSheetSelect.value = setSheet;
       }
-      populatePalette();
+      updatePaletteGridSize();
+      renderPaletteViewer();
     }
 
-    function populatePalette() {
-      paletteGrid.innerHTML = '';
+    function updatePaletteGridSize() {
       const sheetName = paletteSheetSelect.value;
       const sheet = spritesheets[sheetName];
-      if (!sheet) return;
+      if (sheet && sheet.frameSize) {
+        paletteGridW = sheet.frameSize.width || 16;
+        paletteGridH = sheet.frameSize.height || 16;
+      } else {
+        paletteGridW = 16;
+        paletteGridH = 16;
+      }
+    }
+
+    function renderPaletteViewer() {
+      const sheetName = paletteSheetSelect.value;
+      const sheet = spritesheets[sheetName];
+      if (!sheet) {
+        paletteCanvas.width = 1;
+        paletteCanvas.height = 1;
+        paletteCount.textContent = '';
+        return;
+      }
 
       const filterText = (paletteFilter.value || '').toLowerCase();
+      const spriteCount = Object.keys(sheet.sprites).length;
+      paletteCount.textContent = spriteCount + ' sprites';
 
-      const img = new Image();
-      img.src = sheet.imageUrl;
-      img.onerror = () => {
-        paletteGrid.innerHTML = '<div style="color:red;font-size:10px;">Failed to load sheet</div>';
-      };
-      img.onload = () => {
-        imageCache.set(sheet.imageUrl, img);
-        let rendered = 0;
-        for (const [spriteName, sprite] of Object.entries(sheet.sprites)) {
-          if (filterText && !spriteName.toLowerCase().includes(filterText)) continue;
-
-          const c = document.createElement('canvas');
-          c.width = 24; c.height = 24;
-          c.className = 'palette-sprite';
-          c.title = spriteName;
-          c.dataset.spriteName = spriteName;
-          c.dataset.sheetName = sheetName;
-
-          const sctx = c.getContext('2d');
-          sctx.imageSmoothingEnabled = false;
-          sctx.drawImage(img, sprite.x, sprite.y, sprite.w, sprite.h, 0, 0, 24, 24);
-
-          c.addEventListener('click', () => {
-            if (currentClipName) {
-              addFrameToCurrentClip(spriteName);
-            }
-          });
-
-          paletteGrid.appendChild(c);
-          rendered++;
-        }
-        paletteCount.textContent = rendered + ' sprites';
-      };
+      // Use cached image or load fresh
+      const cachedImg = imageCache.get(sheet.imageUrl);
+      if (cachedImg && cachedImg.complete) {
+        drawPaletteCanvas(cachedImg, sheet, filterText);
+      } else {
+        const img = new Image();
+        img.onload = () => {
+          imageCache.set(sheet.imageUrl, img);
+          drawPaletteCanvas(img, sheet, filterText);
+        };
+        img.onerror = () => {
+          paletteCount.textContent = 'Failed to load sheet';
+        };
+        img.src = sheet.imageUrl;
+      }
     }
+
+    function drawPaletteCanvas(img, sheet, filterText) {
+      paletteCanvas.width = img.width;
+      paletteCanvas.height = img.height;
+      paletteCanvas.style.width = (img.width * paletteZoom) + 'px';
+      paletteCanvas.style.height = (img.height * paletteZoom) + 'px';
+
+      paletteCtx.clearRect(0, 0, img.width, img.height);
+      paletteCtx.drawImage(img, 0, 0);
+
+      // Draw grid overlay
+      paletteCtx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+      paletteCtx.lineWidth = 1;
+      for (let x = paletteGridW; x < img.width; x += paletteGridW) {
+        paletteCtx.beginPath();
+        paletteCtx.moveTo(x + 0.5, 0);
+        paletteCtx.lineTo(x + 0.5, img.height);
+        paletteCtx.stroke();
+      }
+      for (let y = paletteGridH; y < img.height; y += paletteGridH) {
+        paletteCtx.beginPath();
+        paletteCtx.moveTo(0, y + 0.5);
+        paletteCtx.lineTo(img.width, y + 0.5);
+        paletteCtx.stroke();
+      }
+
+      // Highlight named sprites
+      for (const [name, sprite] of Object.entries(sheet.sprites)) {
+        const matchesFilter = !filterText || name.toLowerCase().includes(filterText);
+
+        if (filterText && !matchesFilter) {
+          // Dim non-matching sprites
+          paletteCtx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+          paletteCtx.fillRect(sprite.x, sprite.y, sprite.w, sprite.h);
+        } else if (filterText && matchesFilter) {
+          // Highlight matching sprites
+          paletteCtx.strokeStyle = 'rgba(255, 220, 40, 0.9)';
+          paletteCtx.lineWidth = 2;
+          paletteCtx.strokeRect(sprite.x + 1, sprite.y + 1, sprite.w - 2, sprite.h - 2);
+        }
+      }
+    }
+
+    // Palette canvas click → add frame
+    paletteCanvas.addEventListener('click', (e) => {
+      const sheetName = paletteSheetSelect.value;
+      const sheet = spritesheets[sheetName];
+      if (!sheet || !currentClipName) return;
+
+      const rect = paletteCanvas.getBoundingClientRect();
+      const x = Math.floor((e.clientX - rect.left) / paletteZoom);
+      const y = Math.floor((e.clientY - rect.top) / paletteZoom);
+
+      // Snap to grid
+      const snapX = Math.floor(x / paletteGridW) * paletteGridW;
+      const snapY = Math.floor(y / paletteGridH) * paletteGridH;
+
+      // Find named sprite at this position
+      let foundName = null;
+      for (const [name, sp] of Object.entries(sheet.sprites)) {
+        if (sp.x === snapX && sp.y === snapY) { foundName = name; break; }
+      }
+
+      if (foundName) {
+        addFrameToCurrentClip(foundName);
+        paletteClicked.textContent = '+ ' + foundName;
+
+        // Brief visual feedback — highlight the clicked cell
+        const img = imageCache.get(sheet.imageUrl);
+        if (img) {
+          drawPaletteCanvas(img, sheet, (paletteFilter.value || '').toLowerCase());
+          paletteCtx.fillStyle = 'rgba(255, 220, 40, 0.35)';
+          paletteCtx.fillRect(snapX, snapY, paletteGridW, paletteGridH);
+          paletteCtx.strokeStyle = 'rgba(255, 220, 40, 1)';
+          paletteCtx.lineWidth = 2;
+          paletteCtx.strokeRect(snapX + 1, snapY + 1, paletteGridW - 2, paletteGridH - 2);
+        }
+      } else {
+        paletteClicked.textContent = \`(\${snapX}, \${snapY}) — no sprite\`;
+      }
+    });
+
+    // Zoom controls
+    document.getElementById('palette-zoom-in').onclick = () => {
+      paletteZoom = Math.min(6, paletteZoom + 1);
+      renderPaletteViewer();
+    };
+    document.getElementById('palette-zoom-out').onclick = () => {
+      paletteZoom = Math.max(1, paletteZoom - 1);
+      renderPaletteViewer();
+    };
 
     paletteSheetSelect.addEventListener('change', () => {
       paletteFilter.value = '';
-      populatePalette();
+      updatePaletteGridSize();
+      renderPaletteViewer();
     });
 
     paletteFilter.addEventListener('input', () => {
-      populatePalette();
+      renderPaletteViewer();
     });
 
     function updatePaletteVisibility() {
@@ -473,7 +580,8 @@ export class AnimationEditorPanel implements vscode.WebviewViewProvider {
         const setSheet = getCurrentSheetName();
         if (setSheet && spritesheets[setSheet] && paletteSheetSelect.value !== setSheet) {
           paletteSheetSelect.value = setSheet;
-          populatePalette();
+          updatePaletteGridSize();
+          renderPaletteViewer();
         }
       } else {
         paletteSection.style.display = 'none';
