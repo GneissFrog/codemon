@@ -98,6 +98,9 @@ export class SpriteConfigPanel implements vscode.WebviewViewProvider {
         case 'clearAutoSprites':
           await this._clearAutoSprites(message.data as { sheetName: string });
           break;
+        case 'updateGridSize':
+          await this._updateGridSize(message.data as { sheetName: string; gridW: number; gridH: number });
+          break;
       }
     });
   }
@@ -200,7 +203,8 @@ export class SpriteConfigPanel implements vscode.WebviewViewProvider {
         return;
       }
 
-      const sprites = sheets[data.sheetName].sprites;
+      const sheet = sheets[data.sheetName] as Record<string, unknown>;
+      const sprites = sheet.sprites as Record<string, { x: number; y: number; w: number; h: number }>;
       let count = 0;
 
       for (const [name, sprite] of Object.entries(sprites)) {
@@ -220,6 +224,16 @@ export class SpriteConfigPanel implements vscode.WebviewViewProvider {
         count++;
       }
 
+      // Also update frameSize + grid in the manifest
+      sheet.frameSize = { width: data.newW, height: data.newH };
+      const dims = sheet.dimensions as { width: number; height: number } | undefined;
+      if (dims) {
+        sheet.grid = {
+          cols: Math.floor(dims.width / data.newW),
+          rows: Math.floor(dims.height / data.newH),
+        };
+      }
+
       await this._writeManifest(manifest);
 
       const loader = getAssetLoader(this._extensionUri);
@@ -232,6 +246,32 @@ export class SpriteConfigPanel implements vscode.WebviewViewProvider {
     } catch (error) {
       console.error('[SpriteConfig] Failed to resize sprites:', error);
       vscode.window.showErrorMessage(`Failed to resize sprites: ${error}`);
+    }
+  }
+
+  /**
+   * Update grid size (frameSize) for a sheet in the manifest
+   */
+  private async _updateGridSize(data: { sheetName: string; gridW: number; gridH: number }): Promise<void> {
+    try {
+      const manifest = await this._readManifest();
+      const sheets = manifest.spritesheets as Record<string, Record<string, unknown>>;
+      if (!sheets[data.sheetName]) { return; }
+
+      sheets[data.sheetName].frameSize = { width: data.gridW, height: data.gridH };
+
+      // Recompute grid cols/rows from dimensions
+      const dims = sheets[data.sheetName].dimensions as { width: number; height: number } | undefined;
+      if (dims) {
+        sheets[data.sheetName].grid = {
+          cols: Math.floor(dims.width / data.gridW),
+          rows: Math.floor(dims.height / data.gridH),
+        };
+      }
+
+      await this._writeManifest(manifest);
+    } catch (error) {
+      console.error('[SpriteConfig] Failed to update grid size:', error);
     }
   }
 
@@ -1503,6 +1543,10 @@ export class SpriteConfigPanel implements vscode.WebviewViewProvider {
             </div>
           </div>
         </div>
+        <label style="display: flex; align-items: center; gap: 4px; font-size: 9px; color: var(--pixel-muted); margin-top: 4px; cursor: pointer; user-select: none;" title="When enabled, clicking a grid cell that contains a named sprite will auto-select it in the list and switch to the Update tab">
+          <input type="checkbox" id="click-select-toggle" style="margin: 0; accent-color: var(--pixel-accent);">
+          Click to select sprites
+        </label>
       </div>
     </div>
     </div>
@@ -1650,6 +1694,7 @@ export class SpriteConfigPanel implements vscode.WebviewViewProvider {
     let gridW = 16;
     let gridH = 16;
     let selectedSprite = null;
+    let clickToSelect = false;
 
     // DOM
     const sheetList = document.getElementById('spritesheet-list');
@@ -1666,6 +1711,8 @@ export class SpriteConfigPanel implements vscode.WebviewViewProvider {
     const spriteList = document.getElementById('sprite-list');
     const gridWInput = document.getElementById('grid-width');
     const gridHInput = document.getElementById('grid-height');
+    const clickSelectToggle = document.getElementById('click-select-toggle');
+    clickSelectToggle.onchange = () => { clickToSelect = clickSelectToggle.checked; };
 
     ctx.imageSmoothingEnabled = false;
     selectedCtx.imageSmoothingEnabled = false;
@@ -1780,6 +1827,16 @@ export class SpriteConfigPanel implements vscode.WebviewViewProvider {
 
     function selectSpritesheet(name) {
       currentSheet = name;
+
+      // Restore grid size from sheet's frameSize if available
+      const sheet = spritesheets[name];
+      if (sheet && sheet.frameSize) {
+        gridW = sheet.frameSize.width || 16;
+        gridH = sheet.frameSize.height || 16;
+        gridWInput.value = gridW;
+        gridHInput.value = gridH;
+      }
+
       renderSpritesheetList();
       renderSpriteViewer();
       renderSpriteList();
@@ -1906,6 +1963,9 @@ export class SpriteConfigPanel implements vscode.WebviewViewProvider {
         ctx.drawImage(img, 0, 0);
         drawGridOverlay();
         highlightSprites();
+
+        // Update section height now that canvas has been resized
+        updateSectionHeight('sprite-viewer');
       };
     }
 
@@ -1973,14 +2033,45 @@ export class SpriteConfigPanel implements vscode.WebviewViewProvider {
       infoGrid.textContent = \`\${gridX}, \${gridY}\`;
       infoSize.textContent = \`\${gridW}×\${gridH}\`;
 
-      // Update selected sprite preview
-      updateSelectedPreview(x, y);
+      // Find named sprite at this position
+      let foundName = null;
+      if (currentSheet) {
+        const sheet = spritesheets[currentSheet];
+        for (const [name, sp] of Object.entries(sheet.sprites || {})) {
+          if (sp.x === snapX && sp.y === snapY) { foundName = name; break; }
+        }
+      }
 
-      // Populate add fields with snapped coordinates
-      document.getElementById('add-x').value = snapX;
-      document.getElementById('add-y').value = snapY;
-      document.getElementById('add-w').value = gridW;
-      document.getElementById('add-h').value = gridH;
+      // Determine if we're currently editing a sprite in the Update tab
+      const editingName = document.getElementById('editing-sprite-name').textContent;
+      const isEditing = isUpdateTabActive() && editingName && editingName !== 'Select a sprite from the list above';
+
+      if (clickToSelect && foundName && !isEditing) {
+        // Click-to-select enabled, named sprite at this cell, not mid-edit → auto-select it
+        selectSpriteByName(foundName);
+      } else {
+        // Populate form fields based on active tab
+        // If Update tab active with a sprite selected → update position fields (keeps sprite name)
+        if (isEditing) {
+          document.getElementById('edit-x').value = snapX;
+          document.getElementById('edit-y').value = snapY;
+          document.getElementById('edit-w').value = gridW;
+          document.getElementById('edit-h').value = gridH;
+        }
+
+        // Always populate add fields with snapped coordinates
+        document.getElementById('add-x').value = snapX;
+        document.getElementById('add-y').value = snapY;
+        document.getElementById('add-w').value = gridW;
+        document.getElementById('add-h').value = gridH;
+
+        // Update preview
+        updateSelectedPreview(x, y);
+
+        // Set selectedSprite for highlight + re-render
+        selectedSprite = { x: snapX, y: snapY, w: gridW, h: gridH };
+        renderSpriteViewer();
+      }
     });
 
     function updateSelectedPreview(x, y) {
@@ -2010,6 +2101,65 @@ export class SpriteConfigPanel implements vscode.WebviewViewProvider {
       }
       selectedTitle.textContent = spriteName || \`(\${snapX}, \${snapY})\`;
       selectedSprite = { x: snapX, y: snapY, w: gridW, h: gridH };
+    }
+
+    // ─── Helpers ────────────────────────────────────────────────────────
+
+    function isUpdateTabActive() {
+      return document.getElementById('tab-update').classList.contains('active');
+    }
+
+    function selectSpriteByName(name) {
+      if (!currentSheet) return;
+      const sheet = spritesheets[currentSheet];
+      const sprite = sheet.sprites[name];
+      if (!sprite) return;
+
+      // Set selected sprite
+      selectedSprite = { ...sprite, name: name };
+      selectedTitle.textContent = name;
+
+      // Draw preview using cached image
+      const img = imageCache.get(sheet.imageUrl);
+      if (img && img.complete) {
+        selectedCtx.clearRect(0, 0, 32, 32);
+        selectedCtx.drawImage(img, sprite.x, sprite.y, sprite.w, sprite.h, 0, 0, 32, 32);
+      }
+
+      // Update info
+      infoPos.textContent = \`\${sprite.x}, \${sprite.y}\`;
+      infoSize.textContent = \`\${sprite.w}×\${sprite.h}\`;
+      infoGrid.textContent = \`\${Math.floor(sprite.x / gridW)}, \${Math.floor(sprite.y / gridH)}\`;
+
+      // Highlight on worldmap
+      vscode.postMessage({ type: 'highlightSprite', data: { spriteId: currentSheet + '/' + name } });
+
+      // Populate edit fields
+      document.getElementById('editing-sprite-name').textContent = name;
+      document.getElementById('edit-x').value = sprite.x;
+      document.getElementById('edit-y').value = sprite.y;
+      document.getElementById('edit-w').value = sprite.w;
+      document.getElementById('edit-h').value = sprite.h;
+
+      // Switch to Update tab
+      document.getElementById('tab-update').classList.add('active');
+      document.getElementById('tab-add').classList.remove('active');
+      document.getElementById('edit-panel-update').style.display = 'block';
+      document.getElementById('edit-panel-add').style.display = 'none';
+
+      // Highlight in list + scroll into view
+      document.querySelectorAll('.sprite-item').forEach(el => el.classList.remove('selected'));
+      const items = document.querySelectorAll('.sprite-item');
+      items.forEach(el => {
+        const nameEl = el.querySelector('.sprite-name');
+        if (nameEl && nameEl.textContent === name) {
+          el.classList.add('selected');
+          el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        }
+      });
+
+      // Re-render to show selection highlight on canvas
+      renderSpriteViewer();
     }
 
     // ─── Sprite List ─────────────────────────────────────────────────────
@@ -2047,36 +2197,8 @@ export class SpriteConfigPanel implements vscode.WebviewViewProvider {
           item.appendChild(thumb);
           item.appendChild(nameSpan);
 
-          // Capture sprite data for click handler
-          const spriteData = { ...sprite, name: name };
           item.onclick = () => {
-            // Highlight this sprite in viewer
-            selectedSprite = spriteData;
-            selectedTitle.textContent = name;
-
-            // Draw to selected canvas using cached image
-            selectedCtx.clearRect(0, 0, 32, 32);
-            selectedCtx.drawImage(img, sprite.x, sprite.y, sprite.w, sprite.h, 0, 0, 32, 32);
-
-            infoPos.textContent = \`\${sprite.x}, \${sprite.y}\`;
-            infoSize.textContent = \`\${sprite.w}×\${sprite.h}\`;
-
-            // Highlight on worldmap
-            vscode.postMessage({ type: 'highlightSprite', data: { spriteId: currentSheet + '/' + name } });
-
-            // Populate edit fields
-            document.getElementById('editing-sprite-name').textContent = name;
-            document.getElementById('edit-x').value = sprite.x;
-            document.getElementById('edit-y').value = sprite.y;
-            document.getElementById('edit-w').value = sprite.w;
-            document.getElementById('edit-h').value = sprite.h;
-
-            // Highlight in list
-            document.querySelectorAll('.sprite-item').forEach(el => el.classList.remove('selected'));
-            item.classList.add('selected');
-
-            // Re-render to show selection highlight on canvas
-            renderSpriteViewer();
+            selectSpriteByName(name);
           };
 
           spriteList.appendChild(item);
@@ -2134,14 +2256,24 @@ export class SpriteConfigPanel implements vscode.WebviewViewProvider {
 
     // ─── Grid Size ────────────────────────────────────────────────────────
 
+    function saveGridSize() {
+      if (!currentSheet) return;
+      vscode.postMessage({
+        type: 'updateGridSize',
+        data: { sheetName: currentSheet, gridW, gridH }
+      });
+    }
+
     gridWInput.oninput = () => {
       gridW = parseInt(gridWInput.value) || 16;
       renderSpriteViewer();
+      saveGridSize();
     };
 
     gridHInput.oninput = () => {
       gridH = parseInt(gridHInput.value) || 16;
       renderSpriteViewer();
+      saveGridSize();
     };
 
     // Resize All button

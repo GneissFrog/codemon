@@ -223,9 +223,13 @@ export class AssetLoader {
       imageUrl: string;
       normalMapUrl?: string;
       sprites: Record<string, { x: number; y: number; w: number; h: number }>;
+      frameSize?: { width: number; height: number };
       asepriteData?: import('./types').AsepriteExportData;
       asepriteTags?: string[];
     }> = {};
+
+    // Read manifest sheet defs for frameSize
+    const manifestSheets = (this.manifest as any)?.spritesheets as Record<string, import('./types').SpritesheetDef> | undefined;
 
     for (const [name, sheet] of this.spritesheets) {
       const sprites: Record<string, { x: number; y: number; w: number; h: number }> = {};
@@ -242,6 +246,7 @@ export class AssetLoader {
         imageUrl: sheet.imageUrl,
         normalMapUrl: sheet.normalMapUrl,
         sprites,
+        frameSize: manifestSheets?.[name]?.frameSize,
         asepriteData: sheet.asepriteData,
         asepriteTags: sheet.asepriteTags,
       };
@@ -277,6 +282,7 @@ export interface WebviewAssetData {
     imageUrl: string;
     normalMapUrl?: string;
     sprites: Record<string, { x: number; y: number; w: number; h: number }>;
+    frameSize?: { width: number; height: number };  // Grid cell size from manifest
     asepriteData?: import('./types').AsepriteExportData;  // Parsed Aseprite JSON
     asepriteTags?: string[];  // Tags to filter
   }>;
